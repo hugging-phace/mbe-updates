@@ -1074,10 +1074,11 @@ class SupportMixin:
         self._SUP_DLG_ACCENT_H = accent_h
         self._SUP_DLG_GREEN    = accent
         self._SUP_DLG_GREEN_H  = accent_h
-        # Info-box accent: a brighter shade of the border/accent
-        self._SUP_DLG_INFO_BG  = border
-        # Muted info-box text: use light with some transparency feel
-        self._SUP_DLG_INFO_TXT = light
+        # Info-box: dark background (input colour) so light text is readable,
+        # with the accent colour used only for the heading
+        self._SUP_DLG_INFO_BG  = inp
+        self._SUP_DLG_INFO_HDR = accent
+        self._SUP_DLG_INFO_TXT = text
 
     # ---- Tooltip helpers ------------------------------------------------
     def _show_tooltip(self, widget, text):
@@ -1233,7 +1234,7 @@ class SupportMixin:
         info.pack(fill="x", padx=16, pady=(6, 8))
         ctk.CTkLabel(info, text="What to expect",
                      font=(MODERN_FONT, 11, "bold"),
-                     text_color=self._SUP_DLG_LIGHT,
+                     text_color=self._SUP_DLG_INFO_HDR,
                      anchor="w").pack(anchor="w", padx=10, pady=(8, 2))
         ctk.CTkLabel(info,
             text=f"\u2022 {DEVELOPER_NAME} will review your report within "
@@ -1245,7 +1246,7 @@ class SupportMixin:
                  f"   requires substantial work\n"
                  f"\u2022 Write down your case number for follow-up: contact "
                  f"{DEVELOPER_EMAIL}",
-            font=(MODERN_FONT, 10), text_color=self._SUP_DLG_MUTED,
+            font=(MODERN_FONT, 10), text_color=self._SUP_DLG_INFO_TXT,
             anchor="w", justify="left").pack(
             anchor="w", padx=10, pady=(0, 8))
 
