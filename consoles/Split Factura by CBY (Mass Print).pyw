@@ -124,7 +124,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 # ==============================================================================
 # REMOTE SUPPORT — bug reporting + self-update
 # ==============================================================================
-APP_NAME = "Split Factura by CBY (Master Print)"
+APP_NAME = "Split Factura by CBY (Mass Print)"
 APP_VERSION = "1.0.0"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
@@ -340,7 +340,7 @@ class FacturaSplitApp:
         ctk.set_appearance_mode("Light")
         ctk.set_default_color_theme("blue")
         self.root = ctk.CTk()
-        self.root.title(f"Split Factura by CBY (Master Print)  v{APP_VERSION}")
+        self.root.title(f"Split Factura by CBY (Mass Print)  v{APP_VERSION}")
         self.root.configure(fg_color=BG)
         w, h = 720, 600
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
@@ -367,9 +367,18 @@ class FacturaSplitApp:
         ctk.CTkLabel(header, text="Split Factura by CBY",
                      font=(MODERN_FONT, 20, "bold"),
                      text_color=LIGHT).pack(side="left")
-        ctk.CTkLabel(header, text="(Master Print)",
+        ctk.CTkLabel(header, text="(Mass Print)",
                      font=(MODERN_FONT, 14),
                      text_color=MUTED).pack(side="left", padx=(8, 0))
+
+        # Info / help icon
+        info_btn = ctk.CTkButton(
+            header, text="\u24d8", width=30, height=30,
+            fg_color="transparent", hover_color="#24507a",
+            corner_radius=15, text_color=LIGHT,
+            font=(MODERN_FONT, 18, "bold"),
+            command=self._show_help_dialog)
+        info_btn.pack(side="left", padx=(10, 0))
 
         # Top buttons
         top_btns = ctk.CTkFrame(self.root, fg_color="transparent")
@@ -400,11 +409,12 @@ class FacturaSplitApp:
         style.theme_use("clam")
         style.configure("Treeview",
                         background=INPUT, foreground=DARK,
-                        rowheight=28, fieldbackground=INPUT,
-                        bordercolor=BORDER, borderwidth=1)
+                        rowheight=32, fieldbackground=INPUT,
+                        bordercolor=BORDER, borderwidth=1,
+                        font=(MODERN_FONT, 13))
         style.configure("Treeview.Heading",
                         background=BG, foreground=LIGHT,
-                        font=(MODERN_FONT, 11, "bold"), relief="flat")
+                        font=(MODERN_FONT, 13, "bold"), relief="flat")
         style.map("Treeview.Heading",
                   background=[("active", ACCENT_H)])
         style.map("Treeview",
@@ -449,6 +459,60 @@ class FacturaSplitApp:
         self._support_btn.bind("<Leave>",
             lambda e: _hide_tooltip())
 
+    # ---- Help dialog -------------------------------------------------
+    def _show_help_dialog(self):
+        dlg = ctk.CTkToplevel(self.root)
+        dlg.title("How It Works")
+        dlg.configure(fg_color=BG)
+        dlg.transient(self.root)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+        w, h = 520, 560
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+
+        ctk.CTkLabel(dlg, text="How It Works",
+                     font=(MODERN_FONT, 18, "bold"),
+                     text_color=LIGHT).pack(anchor="w", padx=20, pady=(16, 8))
+
+        help_text = (
+            "This tool splits factura PDFs into separate files\n"
+            "organized by CBY (box number), so each CBY gets\n"
+            "its own PDF with all relevant invoice pages.\n\n"
+            "Steps:\n\n"
+            "1. Click \"Choose Manifest\" and select the manifest\n"
+            "   Excel file for the shipment.\n\n"
+            "2. The window populates with three columns:\n"
+            "   - CBY (box number, from Column C)\n"
+            "   - Package # (from Column T)\n"
+            "   - Invoice (notes from Column U: Y, dupe, corrupt, etc.)\n\n"
+            "   Document rows (CBY 1000) are automatically excluded.\n\n"
+            "3. Click \"Print Split\" to choose what to print.\n\n"
+            "4. In the dialog:\n"
+            "   - \"All\" includes everything (with duplicate invoices).\n"
+            "     This is not ideal for Customs clearance.\n"
+            "   - Individual categories let you pick only the pages\n"
+            "     you need (e.g. just Y, just blanks, etc.).\n"
+            "   - Select which factura PDF(s) to parse. This lets you\n"
+            "     process in batches without overwriting previous output.\n\n"
+            "5. The tool scans each selected factura PDF, finds pages\n"
+            "   matching package numbers, and groups them by CBY.\n\n"
+            "6. Output PDFs are saved in the same folder as the\n"
+            "   factura. Each file is named after the CBY number\n"
+            "   (e.g. 47.pdf, 59.pdf). Every page is labeled\n"
+            "   \"CBY {number}\" in red."
+        )
+        ctk.CTkLabel(dlg, text=help_text,
+                     font=(MODERN_FONT, 12), text_color=TEXT,
+                     anchor="w", justify="left").pack(
+                         anchor="w", padx=20, pady=(0, 16))
+
+        ctk.CTkButton(dlg, text="Got it", command=dlg.destroy,
+                      fg_color=ACCENT, hover_color=ACCENT_H, width=100,
+                      height=32, corner_radius=6,
+                      font=(MODERN_FONT, 12, "bold")).pack(
+                          side="bottom", pady=(0, 16))
+
     # ---- Manifest loading --------------------------------------------
     def _choose_manifest(self):
         path = filedialog.askopenfilename(
@@ -484,6 +548,9 @@ class FacturaSplitApp:
             if cby.endswith(".0"):
                 cby = cby[:-2]
             inv = str(inv_val).strip() if inv_val is not None else ""
+            # Skip document rows (CBY 1000)
+            if cby == "1000":
+                continue
             if pkg:
                 self._rows.append((cby, pkg, inv))
         wb.close()
@@ -494,9 +561,15 @@ class FacturaSplitApp:
             tag = "even" if i % 2 == 0 else "odd"
             self.tree.insert("", "end", values=(cby, pkg, inv), tags=(tag,))
 
-        # Update status
+        # Update status — also detect factura PDFs
+        manifest_dir = self._manifest_path.parent
+        self._pdf_files = []
+        for p in manifest_dir.rglob("*.pdf"):
+            if p.name.lower().startswith("factura"):
+                self._pdf_files.append(p)
+        pdf_count = len(self._pdf_files)
         self._status_label.configure(
-            text=f"{len(self._rows)} entries from {self._manifest_path.name}",
+            text=f"{len(self._rows)} entries  |  {pdf_count} factura PDF(s) detected",
             text_color=LIGHT)
         self._print_btn.configure(state="normal")
 
@@ -517,8 +590,8 @@ class FacturaSplitApp:
                 has_non_blank = True
                 inv_values.add(inv_lower)
 
-        # Build checkbox options
         all_blank = not has_non_blank
+        pdf_files = getattr(self, "_pdf_files", [])
 
         dlg = ctk.CTkToplevel(self.root)
         dlg.title("Choose What to Print")
@@ -526,85 +599,142 @@ class FacturaSplitApp:
         dlg.transient(self.root)
         dlg.grab_set()
         dlg.resizable(False, False)
-        w, h = 420, 480
+        w, h = 520, 640
         sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
         dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
-        ctk.CTkLabel(dlg, text="Choose What to Print",
+        # Scrollable content
+        content = ctk.CTkScrollableFrame(dlg, fg_color="transparent",
+                                         label_text="")
+        content.pack(fill="both", expand=True, padx=20, pady=(12, 0))
+
+        ctk.CTkLabel(content, text="Choose What to Print",
                      font=(MODERN_FONT, 16, "bold"),
-                     text_color=LIGHT).pack(anchor="w", padx=20, pady=(16, 4))
-        ctk.CTkLabel(dlg,
+                     text_color=LIGHT).pack(anchor="w", pady=(0, 4))
+        ctk.CTkLabel(content,
                      text="Select which invoice categories to include.\n"
                           "Anything not selected will be ignored.",
                      font=(MODERN_FONT, 11), text_color=MUTED,
-                     justify="left").pack(anchor="w", padx=20, pady=(0, 12))
+                     justify="left").pack(anchor="w", pady=(0, 10))
 
-        # Warning if all blank
-        if all_blank:
-            warn = ctk.CTkFrame(dlg, fg_color="#7a1f1f", corner_radius=6)
-            warn.pack(fill="x", padx=20, pady=(0, 12))
-            ctk.CTkLabel(warn,
-                         text="WARNING\n"
-                              "This will capture all pages including duplicate\n"
-                              "invoices. This is not ideal for Customs clearance.",
-                         font=(MODERN_FONT, 11, "bold"), text_color="#ffcccc",
-                         justify="left").pack(padx=12, pady=10)
+        # ---- "All" option (always present, partitioned) ----
+        all_frame = ctk.CTkFrame(content, fg_color="#1a2a4a", corner_radius=6)
+        all_frame.pack(fill="x", pady=(0, 8))
+        all_var = ctk.BooleanVar(value=all_blank)
+        ctk.CTkCheckBox(all_frame, text="All (include everything)",
+                        variable=all_var,
+                        font=(MODERN_FONT, 13, "bold"), text_color=LIGHT,
+                        fg_color=ACCENT, hover_color=ACCENT_H,
+                        checkbox_width=22, checkbox_height=22).pack(
+                            anchor="w", padx=12, pady=(10, 4))
+        ctk.CTkLabel(all_frame,
+                     text="WARNING: This will capture all pages including\n"
+                          "duplicate invoices. This is not ideal for\n"
+                          "Customs clearance.",
+                     font=(MODERN_FONT, 10), text_color="#ffcccc",
+                     justify="left").pack(anchor="w", padx=28, pady=(0, 8))
 
-        # Checkboxes
-        check_frame = ctk.CTkFrame(dlg, fg_color="transparent")
-        check_frame.pack(fill="x", padx=20, pady=(0, 8))
+        # ---- Partition ----
+        ctk.CTkLabel(content, text="\u2500" * 50,
+                     font=(MODERN_FONT, 10), text_color=MUTED).pack(
+                         fill="x", pady=(0, 6))
+
+        # ---- Individual category checkboxes ----
+        cat_label = ctk.CTkLabel(content, text="Individual Categories:",
+                                 font=(MODERN_FONT, 12, "bold"),
+                                 text_color=LIGHT)
+        cat_label.pack(anchor="w", pady=(0, 4))
 
         checks = {}
-        if all_blank:
-            # Only "All" option
-            var = ctk.BooleanVar(value=True)
-            cb = ctk.CTkCheckBox(check_frame, text="All", variable=var,
-                                 font=(MODERN_FONT, 13), text_color=LIGHT,
+        if has_blank:
+            var = ctk.BooleanVar(value=False)
+            cb = ctk.CTkCheckBox(content, text="Blanks (no note)",
+                                 variable=var,
+                                 font=(MODERN_FONT, 12), text_color=LIGHT,
                                  fg_color=ACCENT, hover_color=ACCENT_H)
-            cb.pack(anchor="w", pady=4)
-            checks["all"] = var
-        else:
-            # Blank option
-            if has_blank:
-                var = ctk.BooleanVar(value=False)
-                cb = ctk.CTkCheckBox(check_frame, text="Blanks (no note)",
-                                     variable=var,
-                                     font=(MODERN_FONT, 12), text_color=LIGHT,
-                                     fg_color=ACCENT, hover_color=ACCENT_H)
-                cb.pack(anchor="w", pady=3)
-                checks["(blank)"] = var
-            # Each unique non-blank value
-            for val in sorted(inv_values):
-                var = ctk.BooleanVar(value=False)
-                display = val[0].upper() + val[1:] if val else val
-                # Count entries
-                count = sum(1 for _, _, inv in self._rows
-                            if inv.lower().strip() == val)
-                cb = ctk.CTkCheckBox(check_frame, text=f"{display} ({count})",
-                                     variable=var,
-                                     font=(MODERN_FONT, 12), text_color=LIGHT,
-                                     fg_color=ACCENT, hover_color=ACCENT_H)
-                cb.pack(anchor="w", pady=3)
-                checks[val] = var
+            cb.pack(anchor="w", padx=20, pady=3)
+            checks["(blank)"] = var
+        for val in sorted(inv_values):
+            var = ctk.BooleanVar(value=False)
+            display = val[0].upper() + val[1:] if val else val
+            count = sum(1 for _, _, inv in self._rows
+                        if inv.lower().strip() == val)
+            cb = ctk.CTkCheckBox(content, text=f"{display} ({count})",
+                                 variable=var,
+                                 font=(MODERN_FONT, 12), text_color=LIGHT,
+                                 fg_color=ACCENT, hover_color=ACCENT_H)
+            cb.pack(anchor="w", padx=20, pady=3)
+            checks[val] = var
 
-        # Buttons
+        # ---- Partition ----
+        ctk.CTkLabel(content, text="\u2500" * 50,
+                     font=(MODERN_FONT, 10), text_color=MUTED).pack(
+                         fill="x", pady=(8, 6))
+
+        # ---- Factura selection ----
+        ctk.CTkLabel(content, text="Select Factura PDF(s) to Parse:",
+                     font=(MODERN_FONT, 12, "bold"),
+                     text_color=LIGHT).pack(anchor="w", pady=(0, 4))
+        ctk.CTkLabel(content,
+                     text=f"{len(pdf_files)} factura PDF(s) detected.\n"
+                          "Choose which ones to include. This lets you\n"
+                          "process in batches without overwriting files.",
+                     font=(MODERN_FONT, 10), text_color=MUTED,
+                     justify="left").pack(anchor="w", pady=(0, 6))
+
+        pdf_checks = {}
+        if not pdf_files:
+            ctk.CTkLabel(content,
+                         text="No factura PDFs found in manifest folder!",
+                         font=(MODERN_FONT, 11, "bold"),
+                         text_color="#ff8888").pack(anchor="w", padx=20, pady=4)
+        else:
+            for pdf_path in pdf_files:
+                var = ctk.BooleanVar(value=True)
+                # Show relative path from manifest dir for clarity
+                try:
+                    rel = pdf_path.relative_to(self._manifest_path.parent)
+                    display_name = str(rel)
+                except Exception:
+                    display_name = pdf_path.name
+                size_mb = pdf_path.stat().st_size / (1024 * 1024)
+                cb = ctk.CTkCheckBox(
+                    content,
+                    text=f"{display_name}  ({size_mb:.1f} MB)",
+                    variable=var,
+                    font=(MODERN_FONT, 11), text_color=LIGHT,
+                    fg_color=ACCENT, hover_color=ACCENT_H)
+                cb.pack(anchor="w", padx=20, pady=2)
+                pdf_checks[str(pdf_path)] = var
+
+        # ---- Buttons ----
         btns = ctk.CTkFrame(dlg, fg_color="transparent")
         btns.pack(side="bottom", fill="x", padx=20, pady=(0, 16))
 
         def _do_print():
+            # Check invoice categories
+            use_all = all_var.get()
             selected = set()
-            for key, var in checks.items():
-                if var.get():
-                    if key == "all":
-                        selected.add("all")
-                    else:
+            if not use_all:
+                for key, var in checks.items():
+                    if var.get():
                         selected.add(key)
-            if not selected:
-                messagebox.showwarning("Nothing Selected",
-                    "Please select at least one category to print.")
+                if not selected:
+                    messagebox.showwarning("Nothing Selected",
+                        "Please select at least one invoice category to print,\n"
+                        "or check 'All' to include everything.")
+                    return
+
+            # Check factura selection
+            selected_pdfs = [Path(fp) for fp, var in pdf_checks.items()
+                             if var.get()]
+            if not selected_pdfs:
+                messagebox.showwarning("No Facturas Selected",
+                    "Please choose which factura(s) you wish to split.")
                 return
+
             dlg.destroy()
-            self._do_print_split(selected, all_blank)
+            self._do_print_split(selected, use_all, selected_pdfs)
 
         ctk.CTkButton(btns, text="Print Split", command=_do_print,
                       fg_color=ORANGE, hover_color=ORANGE_H, width=120,
@@ -616,20 +746,12 @@ class FacturaSplitApp:
                       font=(MODERN_FONT, 12)).pack(side="left", padx=(8, 0))
 
     # ---- Actual printing ---------------------------------------------
-    def _do_print_split(self, selected, all_blank):
-        # Determine which invoice notes are included
-        if all_blank or "all" in selected:
-            include_all = True
-            selected_categories = None
-        else:
-            include_all = False
-            selected_categories = selected
-
+    def _do_print_split(self, selected_categories, use_all, pdf_files):
         # Build package -> (cby, invoice) lookup
         pkg_lookup = {}
         for cby, pkg, inv in self._rows:
             inv_lower = inv.lower().strip()
-            if include_all or inv_lower in selected_categories:
+            if use_all or inv_lower in selected_categories:
                 pkg_lookup[pkg] = (cby, inv_lower)
 
         if not pkg_lookup:
@@ -637,19 +759,12 @@ class FacturaSplitApp:
                 "No packages match the selected categories.")
             return
 
-        # Find factura PDFs in manifest's folder + subfolders
-        manifest_dir = self._manifest_path.parent
-        pdf_files = []
-        for p in manifest_dir.rglob("*.pdf"):
-            if p.name.lower().startswith("factura"):
-                pdf_files.append(p)
-
         if not pdf_files:
-            messagebox.showwarning("No PDFs Found",
-                f"No factura PDFs found in:\n{manifest_dir}\n\n"
-                f"Make sure the factura PDFs are in the same folder\n"
-                f"or a subfolder of the manifest.")
+            messagebox.showwarning("No PDFs",
+                "No factura PDFs were selected.")
             return
+
+        manifest_dir = self._manifest_path.parent
 
         # Progress window
         prog = ctk.CTkToplevel(self.root)
@@ -692,8 +807,8 @@ class FacturaSplitApp:
                 except Exception as e:
                     print(f"Error reading {pdf_path}: {e}")
 
-            # Generate output PDFs
-            output_dir = manifest_dir / "output_by_cby"
+            # Generate output PDFs — save in the same folder as the factura
+            output_dir = pdf_files[0].parent
             output_dir.mkdir(exist_ok=True)
 
             for cby, pages in cby_pages.items():
@@ -718,10 +833,24 @@ class FacturaSplitApp:
             prog.after(1500, lambda: prog.destroy())
 
             # Show results
+            if not found_pkgs:
+                # Nothing was found — likely the factura was printed
+                # (package numbers embedded as flat images, not text)
+                self.root.after(100, lambda: messagebox.showwarning(
+                    "Package Numbers Not Detectable",
+                    "No package numbers were found in the factura PDF(s).\n\n"
+                    "This usually happens when the factura was printed\n"
+                    "instead of saved. Printing can embed the package\n"
+                    "number as a flat image, making it undetectable by\n"
+                    "text scanning.\n\n"
+                    "Please ensure you SAVE the factura when downloading\n"
+                    "from E-Box, rather than printing it to PDF."))
+                return
+
             missing = sorted(set(pkg_lookup.keys()) - found_pkgs)
             result_msg = (
-                f"Created {len(cby_pages)} CBY PDF files in:\n"
-                f"{output_dir}\n\n")
+                f"Created {len(cby_pages)} CBY PDF files.\n\n"
+                f"Saved to:\n{output_dir}\n\n")
             if missing:
                 result_msg += (
                     f"{len(missing)} packages were not found in any PDF:\n"
