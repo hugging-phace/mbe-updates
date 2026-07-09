@@ -121,6 +121,9 @@ ROW_ALT  = "#c5d8eb"
 
 SCRIPT_PATH = Path(__file__).resolve()
 
+# A4 width in points (8.27 inches) — all output pages are normalized to this width
+A4_WIDTH = 595
+
 # ==============================================================================
 # REMOTE SUPPORT — bug reporting + self-update
 # ==============================================================================
@@ -261,6 +264,28 @@ def _download_and_apply_update(new_url):
         return True, None
     except Exception as e:
         return False, str(e)
+
+
+# ==============================================================================
+# Page rescaling — normalize all pages to A4 width, preserve height proportionally
+# ==============================================================================
+def _rescale_to_a4_width(src_doc, page_idx):
+    """Scale a page to A4 width (595pt) while preserving its height
+    proportionally.  Returns a new fitz.Document containing one page.
+    If the page is already A4 width, it's copied as-is."""
+    page = src_doc[page_idx]
+    if abs(page.rect.width - A4_WIDTH) < 1:
+        # Already A4 width — just copy it
+        out = fitz.open()
+        out.insert_pdf(src_doc, from_page=page_idx, to_page=page_idx)
+        return out
+    zoom = A4_WIDTH / page.rect.width
+    new_width = A4_WIDTH
+    new_height = page.rect.height * zoom
+    scaled = fitz.open()
+    new_page = scaled.new_page(width=new_width, height=new_height)
+    new_page.show_pdf_page(new_page.rect, src_doc, page_idx)
+    return scaled
 
 
 # ==============================================================================
@@ -471,7 +496,7 @@ class FacturaSplitApp:
         dlg.transient(self.root)
         dlg.grab_set()
         dlg.resizable(False, False)
-        w, h = 520, 600
+        w, h = 520, 660
         sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
         dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
@@ -819,9 +844,9 @@ class FacturaSplitApp:
                 out_pdf = fitz.open()
                 for pdf_name, page_idx in pages:
                     with fitz.open(pdf_name) as src:
-                        out_pdf.insert_pdf(src,
-                                           from_page=page_idx,
-                                           to_page=page_idx)
+                        scaled = _rescale_to_a4_width(src, page_idx)
+                        out_pdf.insert_pdf(scaled)
+                        scaled.close()
                 # Label pages
                 label = f"CBY {cby}"
                 for page in out_pdf:
