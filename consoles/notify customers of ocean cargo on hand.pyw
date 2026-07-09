@@ -2204,6 +2204,7 @@ def _hide_tooltip():
 def _on_support_click():
     """Handle click on the support icon - opens update dialog or bug report."""
     global _pending_update
+    _hide_tooltip()
     if _pending_update is not None:
         _apply_fixes_dialog()
     else:

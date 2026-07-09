@@ -695,8 +695,7 @@ def _download_and_apply_update(new_url):
 # ------------------------------------------------------------------
 # Embedded data — saved inside this script file (no external Excel)
 # ------------------------------------------------------------------
-CUSTOMS_DATA = [
-]
+CUSTOMS_DATA = []
 
 # ------------------------------------------------------------------
 # Theme colours  (Light mode)
@@ -2291,6 +2290,7 @@ class CustomsConsole:
             pass
 
     def _on_support_click(self):
+        self._hide_tooltip()
         if self._pending_update:
             self._apply_fixes_dialog()
         else:

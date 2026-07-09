@@ -1153,6 +1153,7 @@ class SupportMixin:
 
     # ---- Click handler --------------------------------------------------
     def _on_support_click(self, window_name):
+        self._hide_tooltip()
         if self._pending_update:
             self._apply_fixes_dialog()
         else:
