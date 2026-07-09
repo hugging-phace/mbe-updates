@@ -531,7 +531,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 #   never lost when the code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "Packages at Customs Console"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 DEVELOPER_NAME = "Atlas Ramoon"
 
 BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
@@ -2363,7 +2363,7 @@ class CustomsConsole:
                      anchor="w").pack(anchor="w", padx=10, pady=(8, 2))
         ctk.CTkLabel(info,
             text=f"\u2022 {DEVELOPER_NAME} will review your report within 24-48 hours\n"
-                 f"\u2022 When a fix is ready, this icon will change to 'Apply Fixes'\n"
+                 f"\u2022 When a fix is ready, the bug icon will change to 'Apply Fixes'\n"
                  f"\u2022 {DEVELOPER_NAME} will coordinate with management if the fix\n"
                  f"   requires substantial work",
             font=(MODERN_FONT, 10), text_color=MUTED,

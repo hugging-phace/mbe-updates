@@ -1,5 +1,5 @@
 {
-  "version": "1.0.1",
-  "changelog": "v1.0.1 \u2014 Minor update:\n- Added version number to window title for easier support\n- Fixed: new package rows now save correctly\n- Added category, email, and file attachment to bug reports",
+  "version": "1.0.2",
+  "changelog": "v1.0.2 - Minor text fix:\n- Clarified 'bug icon' wording in the What to expect section",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Packages%20at%20Customs%20Console.pyw"
 }
