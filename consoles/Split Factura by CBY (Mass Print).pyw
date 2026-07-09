@@ -371,14 +371,18 @@ class FacturaSplitApp:
                      font=(MODERN_FONT, 14),
                      text_color=MUTED).pack(side="left", padx=(8, 0))
 
-        # Info / help icon
-        info_btn = ctk.CTkButton(
-            header, text="\u24d8", width=30, height=30,
-            fg_color="transparent", hover_color="#24507a",
+        # Info / help icon — hover shows "Instructions" tooltip
+        self._info_btn = ctk.CTkButton(
+            header, text=" i ", width=30, height=30,
+            fg_color="#2a4a6a", hover_color="#3a5a7a",
             corner_radius=15, text_color=LIGHT,
-            font=(MODERN_FONT, 18, "bold"),
+            font=(MODERN_FONT, 16, "bold"),
             command=self._show_help_dialog)
-        info_btn.pack(side="left", padx=(10, 0))
+        self._info_btn.pack(side="left", padx=(10, 0))
+        self._info_btn.bind("<Enter>",
+            lambda e: _show_tooltip(self._info_btn, "Instructions"))
+        self._info_btn.bind("<Leave>",
+            lambda e: _hide_tooltip())
 
         # Top buttons
         top_btns = ctk.CTkFrame(self.root, fg_color="transparent")
@@ -467,7 +471,7 @@ class FacturaSplitApp:
         dlg.transient(self.root)
         dlg.grab_set()
         dlg.resizable(False, False)
-        w, h = 520, 560
+        w, h = 520, 600
         sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
         dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
