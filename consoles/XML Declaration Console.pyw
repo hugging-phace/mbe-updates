@@ -1046,18 +1046,38 @@ LAUNCHER_TEXT = "#e0e0e0"
 class SupportMixin:
     """Provides bug-reporting and self-update features to any window class
     that has a ``self.win`` (CTkToplevel), ``self._support_bg`` (bg color
-    string), and ``self._window_name`` (identifying label for bug reports)."""
+    string), and ``self._window_name`` (identifying label for bug reports).
 
-    # Generic dark-theme colours for the support dialogs
-    _SUP_DLG_BG = "#1a1a2e"
-    _SUP_DLG_LIGHT = "#e8e8e8"
-    _SUP_DLG_MUTED = "#888888"
-    _SUP_DLG_INPUT = "#0f0f1a"
-    _SUP_DLG_BORDER = "#333333"
-    _SUP_DLG_ACCENT = "#2e8b57"
-    _SUP_DLG_ACCENT_H = "#3cb371"
-    _SUP_DLG_GREEN = "#2e8b57"
-    _SUP_DLG_GREEN_H = "#3cb371"
+    Call ``_set_support_palette(colors)`` in ``__init__`` to theme the
+    support dialogs to match the window's own colour scheme."""
+
+    # ---- Palette setup --------------------------------------------------
+    def _set_support_palette(self, colors):
+        """Populate instance-level dialog colours from a *colors* dict
+        (keys: bg, input, border, text, light, accent, accent_hover).
+        Falls back to sensible defaults for missing keys."""
+        bg       = colors.get("bg", "#1a1a2e")
+        panel    = colors.get("panel", bg)
+        inp      = colors.get("input", "#0f0f1a")
+        border   = colors.get("border", "#333333")
+        text     = colors.get("text", "#e8e8e8")
+        light    = colors.get("light", "#aaaaaa")
+        accent   = colors.get("accent", "#2e8b57")
+        accent_h = colors.get("accent_hover", accent)
+
+        self._SUP_DLG_BG       = panel
+        self._SUP_DLG_LIGHT    = text
+        self._SUP_DLG_MUTED    = light
+        self._SUP_DLG_INPUT    = inp
+        self._SUP_DLG_BORDER   = border
+        self._SUP_DLG_ACCENT   = accent
+        self._SUP_DLG_ACCENT_H = accent_h
+        self._SUP_DLG_GREEN    = accent
+        self._SUP_DLG_GREEN_H  = accent_h
+        # Info-box accent: a brighter shade of the border/accent
+        self._SUP_DLG_INFO_BG  = border
+        # Muted info-box text: use light with some transparency feel
+        self._SUP_DLG_INFO_TXT = light
 
     # ---- Tooltip helpers ------------------------------------------------
     def _show_tooltip(self, widget, text):
@@ -1073,8 +1093,8 @@ class SupportMixin:
         tw.wm_overrideredirect(True)
         tw.wm_geometry(f"+{x}+{y}")
         label = tk.Label(tw, text=text, justify="left",
-                         bg="#1a1a2e", fg="#e8e8e8", relief="solid",
-                         bd=1, padx=10, pady=8,
+                         bg=self._SUP_DLG_BG, fg=self._SUP_DLG_LIGHT,
+                         relief="solid", bd=1, padx=10, pady=8,
                          font=(MODERN_FONT, 10), wraplength=320)
         label.pack()
         self._tooltip_win = tw
@@ -1209,10 +1229,11 @@ class SupportMixin:
         email_entry.pack(fill="x", pady=(1, 0))
 
         # "What to expect" info box
-        info = ctk.CTkFrame(dlg, fg_color="#1a2a3a", corner_radius=6)
+        info = ctk.CTkFrame(dlg, fg_color=self._SUP_DLG_INFO_BG, corner_radius=6)
         info.pack(fill="x", padx=16, pady=(6, 8))
         ctk.CTkLabel(info, text="What to expect",
-                     font=(MODERN_FONT, 11, "bold"), text_color="#88ccff",
+                     font=(MODERN_FONT, 11, "bold"),
+                     text_color=self._SUP_DLG_LIGHT,
                      anchor="w").pack(anchor="w", padx=10, pady=(8, 2))
         ctk.CTkLabel(info,
             text=f"\u2022 {DEVELOPER_NAME} will review your report within "
@@ -1602,6 +1623,7 @@ class ConsoleWindow(SupportMixin):
         self._tooltip_win = None
         self._support_bg = c["bg"]
         self._window_name = f"XML Builder - {cfg['mode'].title()}"
+        self._set_support_palette(c)
 
         self.win = ctk.CTkToplevel(launcher.root)
         self.win.title(cfg["title"])
@@ -2979,6 +3001,11 @@ class CodesWindow(SupportMixin):
         self._tooltip_win = None
         self._support_bg = "#0f1117"
         self._window_name = "Item Codes"
+        self._set_support_palette({
+            "bg": "#0f1117", "panel": "#141a2a", "input": "#0a0e16",
+            "border": "#1a2a4a", "text": "#c8d6e5", "light": "#5a7a9a",
+            "accent": "#0f3460", "accent_hover": "#1a4a7a",
+        })
 
         self.win = ctk.CTkToplevel()
         self.win.title("Commodity Codes Management")
@@ -3716,6 +3743,11 @@ class TINWindow(SupportMixin):
         self._tooltip_win = None
         self._support_bg = "#0f1117"
         self._window_name = "TIN Numbers"
+        self._set_support_palette({
+            "bg": "#0f1117", "panel": "#141a2a", "input": "#0a0e16",
+            "border": "#1a2a4a", "text": "#c8d6e5", "light": "#5a7a9a",
+            "accent": "#0f3460", "accent_hover": "#1a4a7a",
+        })
 
         self.win = ctk.CTkToplevel()
         self.win.title("TIN Numbers Management")
@@ -4974,6 +5006,11 @@ class UploadWindow(SupportMixin):
         self._tooltip_win = None
         self._support_bg = "#0f0f1a"
         self._window_name = "Upload Declarations"
+        self._set_support_palette({
+            "bg": "#0f0f1a", "panel": "#1a1520", "input": "#0a0a12",
+            "border": "#e8820c", "text": "#e8e8e8", "light": "#a0a0a0",
+            "accent": "#e8820c", "accent_hover": "#f0a030",
+        })
 
         self.win = ctk.CTkToplevel()
         self.win.title("Upload Declarations to COLS")

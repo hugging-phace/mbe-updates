@@ -2275,11 +2275,11 @@ def _report_bug_dialog():
                  text_color="#ffffff").pack(anchor="w", padx=30)
     cat_var = ctk.StringVar(value="Bug Fix")
     cat_frame = ctk.CTkFrame(win, fg_color="transparent")
-    cat_frame.pack(fill="x", padx=30, pady=(5, 10))
+    cat_frame.pack(fill="x", padx=20, pady=(5, 10))
     for cat in ["Bug Fix", "Feature Request", "Environmental Change", "Other"]:
         ctk.CTkRadioButton(cat_frame, text=cat, variable=cat_var, value=cat,
                            font=(MODERN_FONT, 12), text_color="#ffffff",
-                           fg_color="#1e90ff", hover_color="#1c7ed6").pack(side="left", padx=(0, 12))
+                           fg_color="#1e90ff", hover_color="#1c7ed6").pack(side="left", padx=(0, 4))
 
     # Description
     ctk.CTkLabel(win, text="Description:", font=(MODERN_FONT, 13, "bold"),
