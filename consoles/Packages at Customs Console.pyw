@@ -17,6 +17,7 @@ import json
 import threading
 import getpass
 import urllib.request
+import uuid
 from pathlib import Path
 from datetime import datetime, date
 import io
@@ -530,13 +531,13 @@ SCRIPT_PATH = Path(__file__).resolve()
 #   never lost when the code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "Packages at Customs Console"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 DEVELOPER_NAME = "Atlas Ramoon"
 
 BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
 
 UPDATE_MANIFEST_URL = (
-    "https://raw.githubusercontent.com/hugging-phace/mbe-scripts/main/"
+    "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/"
     "manifests/customs-console.json"
 )
 
@@ -578,20 +579,74 @@ def _post_to_discord(content):
         return False, str(e)
 
 
-def _post_bug_report(description):
+def _generate_case_number():
+    """Generate a short case number like CASE-2025-A4F2."""
+    year = datetime.now().year
+    tag = uuid.uuid4().hex[:4].upper()
+    return f"CASE-{year}-{tag}"
+
+
+def _post_bug_report_with_files(description, case_number, file_paths,
+                                reporter_email="", category="Bug Fix"):
+    """POST a bug report to Discord with optional file attachments in ONE message.
+    file_paths: list of file paths to attach (can be empty).
+    reporter_email: optional email for follow-up (included in message text).
+    category: Bug Fix, Feature Request, Environmental Change, or Other.
+    Returns (ok, error_msg)."""
+    if not BUG_REPORT_WEBHOOK_URL:
+        return False, "No bug-report channel is configured."
     try:
         user = getpass.getuser()
     except Exception:
         user = "unknown"
     host = platform.node() or "unknown"
+
     content = (
         f"**Bug Report - {APP_NAME}**\n"
+        f"**Case:** {case_number}\n"
+        f"**Category:** {category}\n"
         f"**Version:** {APP_VERSION}\n"
         f"**From:** {user}@{host}\n"
-        f"**When:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+        + (f"**Email:** {reporter_email}\n" if reporter_email else "")
+        + f"**When:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
         f"**Details:**\n{description}"
     )
-    return _post_to_discord(content)
+
+    if not file_paths:
+        # Simple text-only message
+        return _post_to_discord(content)
+
+    # Multipart: text + files in a single Discord message
+    try:
+        boundary = f"----WebKitFormBoundary{uuid.uuid4().hex[:16]}"
+        payload_json = json.dumps({"content": content[:1900]})
+
+        body = b""
+        body += f"--{boundary}\r\n".encode()
+        body += b'Content-Disposition: form-data; name="payload_json"\r\n'
+        body += b"Content-Type: application/json\r\n\r\n"
+        body += payload_json.encode() + b"\r\n"
+
+        for i, fp in enumerate(file_paths):
+            p = Path(fp)
+            file_data = p.read_bytes()
+            body += f"--{boundary}\r\n".encode()
+            body += f'Content-Disposition: form-data; name="files[{i}]"; filename="{p.name}"\r\n'.encode()
+            body += b"Content-Type: application/octet-stream\r\n\r\n"
+            body += file_data + b"\r\n"
+
+        body += f"--{boundary}--\r\n".encode()
+
+        req = urllib.request.Request(
+            BUG_REPORT_WEBHOOK_URL, data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}",
+                     "User-Agent": f"{APP_NAME}/{APP_VERSION}"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if resp.status in (200, 204):
+                return True, None
+            return False, f"Server returned status {resp.status}"
+    except Exception as e:
+        return False, str(e)
 
 
 def _post_update_applied(old_ver, new_ver):
@@ -703,7 +758,7 @@ class CustomsConsole:
         ctk.set_appearance_mode("Light")
         ctk.set_default_color_theme("blue")
         self.root = ctk.CTk()
-        self.root.title("Packages at Customs — ADD Status Log")
+        self.root.title("Packages at Customs — ADD Status Log  v1.0.1")
         self.root.configure(fg_color=BG)
 
         WIN_W, WIN_H = 1200, 700
@@ -1210,19 +1265,24 @@ class CustomsConsole:
         self._update_delete_not_add_button()
 
     def _sync_tree_to_rows(self):
-        """Sync current treeview values back to self._rows (preserves filtered view)."""
-        # Build a lookup of package -> tree values so we can update the right row
+        """Sync current treeview values back to self._rows.
+        Updates existing rows AND adds new rows that were inserted into the
+        treeview (e.g. via the Add Package dialog). Preserves filtered view
+        by only syncing visible tree items back."""
         tree_items = self._tree.get_children()
-        # We need to match tree rows to self._rows by package number
+        # Build a lookup of package -> tree values
         tree_by_pkg = {}
         for item in tree_items:
             vals = self._tree.item(item, "values")
             if vals and len(vals) >= 3:
                 tree_by_pkg[str(vals[2]).strip()] = vals
 
+        # Update existing rows that are still in the tree
+        existing_pkgs = set()
         for row in self._rows:
             pkg = str(row.get("package", "")).strip()
             if pkg in tree_by_pkg:
+                existing_pkgs.add(pkg)
                 vals = tree_by_pkg[pkg]
                 row["store"]     = vals[0] if len(vals) > 0 else ""
                 row["cby"]       = vals[1] if len(vals) > 1 else ""
@@ -1233,6 +1293,21 @@ class CustomsConsole:
                 row["reason"]    = vals[6] if len(vals) > 6 else ""
                 row["paid"]      = vals[7] if len(vals) > 7 else ""
                 row["notes"]     = vals[8] if len(vals) > 8 else ""
+
+        # Add new rows that are in the tree but not in self._rows
+        for pkg, vals in tree_by_pkg.items():
+            if pkg not in existing_pkgs:
+                self._rows.append({
+                    "store":     vals[0] if len(vals) > 0 else "",
+                    "cby":       vals[1] if len(vals) > 1 else "",
+                    "package":   vals[2] if len(vals) > 2 else "",
+                    "still_add": vals[3] if len(vals) > 3 else "",
+                    "manifest":  vals[4] if len(vals) > 4 else "",
+                    "dec":       vals[5] if len(vals) > 5 else "",
+                    "reason":    vals[6] if len(vals) > 6 else "",
+                    "paid":      vals[7] if len(vals) > 7 else "",
+                    "notes":     vals[8] if len(vals) > 8 else "",
+                })
 
     # ------------------------------------------------------------------
     # Double-click → open edit dialog
@@ -2228,7 +2303,7 @@ class CustomsConsole:
         dlg.transient(self.root)
         dlg.grab_set()
         dlg.resizable(False, False)
-        w, h = 460, 400
+        w, h = 460, 620
         sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
         dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
@@ -2242,49 +2317,182 @@ class CustomsConsole:
                  f"did, what happened, and what you expected. This goes directly\n"
                  f"to the developer ({DEVELOPER_NAME}).",
             font=(MODERN_FONT, 11), text_color=MUTED,
-            anchor="w", justify="left").pack(anchor="w", padx=16, pady=(0, 8))
+            anchor="w", justify="left").pack(anchor="w", padx=16, pady=(0, 6))
 
-        box = ctk.CTkTextbox(dlg, height=180, fg_color=INPUT, border_color=BORDER,
+        # Category selector (single-select)
+        cat_frame = ctk.CTkFrame(dlg, fg_color="transparent")
+        cat_frame.pack(fill="x", padx=16, pady=(0, 4))
+        ctk.CTkLabel(cat_frame, text="Category:",
+                     font=(MODERN_FONT, 11, "bold"), text_color=LIGHT,
+                     anchor="w").pack(anchor="w", pady=(0, 2))
+        cat_var = ctk.StringVar(value="Bug Fix")
+        cat_row = ctk.CTkFrame(cat_frame, fg_color="transparent")
+        cat_row.pack(fill="x")
+        for cat in ("Bug Fix", "Feature Request", "Environmental Change", "Other"):
+            ctk.CTkRadioButton(cat_row, text=cat, variable=cat_var, value=cat,
+                               font=(MODERN_FONT, 10), text_color=LIGHT,
+                               fg_color=ACCENT, hover_color=ACCENT_H,
+                               border_color=BORDER).pack(side="left", padx=(0, 12))
+
+        box = ctk.CTkTextbox(dlg, height=140, fg_color=INPUT, border_color=BORDER,
                              border_width=1, corner_radius=4, text_color=DARK,
                              font=(MODERN_FONT, 11))
         box.pack(fill="both", expand=True, padx=16)
         self._attach_textbox_context_menu(box)
         box.focus_set()
 
-        def _send():
+        # Optional email field for follow-up
+        email_frame = ctk.CTkFrame(dlg, fg_color="transparent")
+        email_frame.pack(fill="x", padx=16, pady=(4, 0))
+        ctk.CTkLabel(email_frame, text="Your email (optional — for updates on this report)",
+                     font=(MODERN_FONT, 10), text_color=MUTED,
+                     anchor="w").pack(anchor="w")
+        email_var = ctk.StringVar(value="")
+        email_entry = ctk.CTkEntry(email_frame, textvariable=email_var, height=28,
+                                   fg_color=INPUT, border_color=BORDER, border_width=1,
+                                   corner_radius=4, text_color=DARK,
+                                   font=(MODERN_FONT, 11))
+        email_entry.pack(fill="x", pady=(1, 0))
+        self._attach_entry_context_menu(email_entry)
+
+        # "What to expect" info box
+        info = ctk.CTkFrame(dlg, fg_color="#1a2a3a", corner_radius=6)
+        info.pack(fill="x", padx=16, pady=(6, 8))
+        ctk.CTkLabel(info, text="What to expect",
+                     font=(MODERN_FONT, 11, "bold"), text_color="#88ccff",
+                     anchor="w").pack(anchor="w", padx=10, pady=(8, 2))
+        ctk.CTkLabel(info,
+            text=f"\u2022 {DEVELOPER_NAME} will review your report within 24-48 hours\n"
+                 f"\u2022 When a fix is ready, this icon will change to 'Apply Fixes'\n"
+                 f"\u2022 {DEVELOPER_NAME} will coordinate with management if the fix\n"
+                 f"   requires substantial work",
+            font=(MODERN_FONT, 10), text_color=MUTED,
+            anchor="w", justify="left").pack(anchor="w", padx=10, pady=(0, 8))
+
+        def _next():
             desc = box.get("0.0", "end").strip()
             if not desc:
                 messagebox.showwarning("Empty", "Please describe the bug first.")
                 return
-            send_btn.configure(state="disabled", text="Sending...")
+            email = email_var.get().strip()
+            category = cat_var.get()
+            dlg.destroy()
+            self._show_attach_files_dialog(desc, email, category)
+
+        ctk.CTkButton(btns, text="Next", command=_next,
+                      fg_color=GREEN, hover_color=GREEN_H, width=100,
+                      height=30, corner_radius=5,
+                      font=(MODERN_FONT, 11, "bold")).pack(side="left")
+        ctk.CTkButton(btns, text="Cancel", command=dlg.destroy,
+                      fg_color="#667788", hover_color="#556677", width=90,
+                      height=30, corner_radius=5,
+                      font=(MODERN_FONT, 11)).pack(side="left", padx=(8, 0))
+
+    def _show_attach_files_dialog(self, description, reporter_email="", category="Bug Fix"):
+        """After the bug description, offer to attach sample files.
+        The actual Discord send happens here — text + files in ONE message."""
+        case_num = _generate_case_number()
+        dlg = ctk.CTkToplevel(self.root)
+        dlg.title(f"Attach Files? (Case {case_num})")
+        dlg.configure(fg_color=BG)
+        dlg.transient(self.root)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+        w, h = 460, 420
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+
+        btns = ctk.CTkFrame(dlg, fg_color="transparent")
+        btns.pack(side="bottom", fill="x", padx=16, pady=(0, 14))
+
+        ctk.CTkLabel(dlg, text="Attach Sample Files?",
+                     font=(MODERN_FONT, 15, "bold"), text_color=LIGHT).pack(
+            anchor="w", padx=16, pady=(14, 2))
+        ctk.CTkLabel(dlg,
+            text=f"Based on your description, {DEVELOPER_NAME} may need sample\n"
+                 f"files to reproduce the issue in a test environment.\n\n"
+                 f"The console script itself is always attached automatically\n"
+                 f"so {DEVELOPER_NAME} gets your exact version for testing.\n\n"
+                 f"If you'd like, attach additional Excel or CSV files below.\n"
+                 f"This is completely optional and files are sent privately\n"
+                 f"alongside your bug report.",
+            font=(MODERN_FONT, 11), text_color=MUTED,
+            anchor="w", justify="left").pack(anchor="w", padx=16, pady=(0, 8))
+
+        # File list area
+        file_list_frame = ctk.CTkFrame(dlg, fg_color=INPUT, corner_radius=4,
+                                       border_width=1, border_color=BORDER)
+        file_list_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+
+        file_list_label = ctk.CTkLabel(file_list_frame, text="No files selected",
+                                       font=(MODERN_FONT, 11), text_color=MUTED,
+                                       anchor="w", justify="left")
+        file_list_label.pack(anchor="w", padx=10, pady=10)
+
+        selected_files = []
+
+        def _pick_files():
+            paths = filedialog.askopenfilenames(
+                title="Select files to attach",
+                filetypes=[("Excel/CSV files", "*.xlsx *.xls *.csv"),
+                           ("All files", "*.*")])
+            if paths:
+                selected_files.clear()
+                selected_files.extend(paths)
+                names = [Path(p).name for p in paths]
+                display = "\n".join(names[:6])
+                if len(names) > 6:
+                    display += f"\n...and {len(names)-6} more"
+                file_list_label.configure(text=display, text_color=DARK)
+
+        def _submit():
+            submit_btn.configure(state="disabled", text="Sending...")
+            skip_btn.configure(state="disabled")
 
             def _worker():
-                ok, err = _post_bug_report(desc)
+                # Always attach the running script itself so the developer
+                # gets the user's exact code + data for reproduction.
+                all_files = [str(SCRIPT_PATH)] + list(selected_files)
+                ok, err = _post_bug_report_with_files(
+                    description, case_num, all_files, reporter_email, category)
                 self.root.after(0, lambda: _done(ok, err))
             threading.Thread(target=_worker, daemon=True).start()
 
         def _done(ok, err):
             if ok:
                 dlg.destroy()
-                messagebox.showinfo("Bug Reported",
-                    f"Your bug report has been sent to {DEVELOPER_NAME}.\n\n"
-                    "Once a fix is ready, you'll see an 'Apply Fixes' option\n"
-                    "in the corner the next time you open this console.")
+                n_files = len(selected_files)
+                if n_files:
+                    messagebox.showinfo("Bug Reported",
+                        f"Case {case_num} submitted with {n_files} file(s).\n\n"
+                        f"Your report and files have been sent to {DEVELOPER_NAME}.\n"
+                        "When a fix is ready, you'll see 'Apply Fixes' here.")
+                else:
+                    messagebox.showinfo("Bug Reported",
+                        f"Case {case_num} submitted.\n\n"
+                        f"Your report has been sent to {DEVELOPER_NAME}.\n"
+                        "When a fix is ready, you'll see 'Apply Fixes' here.")
             else:
-                send_btn.configure(state="normal", text="Send Report")
+                submit_btn.configure(state="normal", text="Submit Report")
+                skip_btn.configure(state="normal")
                 messagebox.showerror("Could Not Send",
                     f"The report could not be sent:\n{err}\n\n"
                     "Check your internet connection and try again.")
 
-        send_btn = ctk.CTkButton(btns, text="Send Report", command=_send,
-                                 fg_color=GREEN, hover_color=GREEN_H, width=130,
-                                 height=30, corner_radius=5,
-                                 font=(MODERN_FONT, 11, "bold"))
-        send_btn.pack(side="left")
-        ctk.CTkButton(btns, text="Cancel", command=dlg.destroy,
-                      fg_color="#667788", hover_color="#556677", width=90,
+        ctk.CTkButton(btns, text="Browse Files", command=_pick_files,
+                      fg_color=ACCENT, hover_color=ACCENT_H, width=120,
                       height=30, corner_radius=5,
-                      font=(MODERN_FONT, 11)).pack(side="left", padx=(8, 0))
+                      font=(MODERN_FONT, 11, "bold")).pack(side="left")
+        submit_btn = ctk.CTkButton(btns, text="Submit Report", command=_submit,
+                                   fg_color=GREEN, hover_color=GREEN_H, width=130,
+                                   height=30, corner_radius=5,
+                                   font=(MODERN_FONT, 11, "bold"))
+        submit_btn.pack(side="left", padx=(8, 0))
+        skip_btn = ctk.CTkButton(btns, text="Skip & Send", command=_submit,
+                                 fg_color="#667788", hover_color="#556677", width=110,
+                                 height=30, corner_radius=5,
+                                 font=(MODERN_FONT, 11))
+        skip_btn.pack(side="left", padx=(8, 0))
 
     def _apply_fixes_dialog(self):
         upd = self._pending_update
