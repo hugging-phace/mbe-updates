@@ -539,9 +539,55 @@ UPDATE_MANIFEST_URL = (
     "manifests/xml-declaration-console.json"
 )
 
-# Patterns for preserving embedded data blocks across updates
-_TIN_DATA_PATTERN = r'BUILTIN_TIN_NUMBERS\s*=\s*\{.*?\n\}'
-_CODES_DATA_PATTERN = r'BUILTIN_CODES\s*=\s*\[.*?\n\]'
+# Patterns for locating embedded data blocks (used to find the start)
+_TIN_DATA_PATTERN = r'BUILTIN_TIN_NUMBERS\s*=\s*\{'
+_CODES_DATA_PATTERN = r'BUILTIN_CODES\s*=\s*\['
+
+
+def _extract_braced_block(text, start_pattern, open_ch, close_ch):
+    """Find the variable assignment matching *start_pattern* and return the
+    full block from the variable name through the matching closing bracket,
+    using depth counting so brackets inside string literals don't confuse it.
+    Returns (block_text, start_index, end_index) or (None, -1, -1)."""
+    m = re.search(start_pattern, text)
+    if not m:
+        return None, -1, -1
+    # Position of the opening bracket
+    bracket_pos = m.end() - 1
+    depth = 0
+    i = bracket_pos
+    in_str = False
+    str_ch = ""
+    while i < len(text):
+        ch = text[i]
+        if in_str:
+            if ch == "\\":
+                i += 2  # skip escaped char
+                continue
+            if ch == str_ch:
+                in_str = False
+        else:
+            if ch in ('"', "'"):
+                in_str = True
+                str_ch = ch
+            elif ch == open_ch:
+                depth += 1
+            elif ch == close_ch:
+                depth -= 1
+                if depth == 0:
+                    return text[m.start():i+1], m.start(), i + 1
+        i += 1
+    return None, -1, -1
+
+
+def _splice_block(new_text, start_pattern, open_ch, close_ch, local_block):
+    """Replace the block in *new_text* (found by *start_pattern*) with
+    *local_block*.  Returns the modified text, or *new_text* unchanged if
+    the block can't be found in either side."""
+    _, ns, ne = _extract_braced_block(new_text, start_pattern, open_ch, close_ch)
+    if ns == -1:
+        return new_text
+    return new_text[:ns] + local_block + new_text[ne:]
 
 
 def _version_tuple(v):
@@ -686,18 +732,18 @@ def _download_and_apply_update(new_url):
         local_text = SCRIPT_PATH.read_text(encoding="utf-8")
 
         # Preserve BUILTIN_TIN_NUMBERS block
-        m_tin = re.search(_TIN_DATA_PATTERN, local_text, flags=re.DOTALL)
-        if m_tin and re.search(_TIN_DATA_PATTERN, new_text, flags=re.DOTALL):
-            local_tin = m_tin.group(0)
-            new_text = re.sub(_TIN_DATA_PATTERN, lambda _: local_tin,
-                              new_text, count=1, flags=re.DOTALL)
+        local_tin, _, _ = _extract_braced_block(
+            local_text, _TIN_DATA_PATTERN, "{", "}")
+        if local_tin:
+            new_text = _splice_block(
+                new_text, _TIN_DATA_PATTERN, "{", "}", local_tin)
 
         # Preserve BUILTIN_CODES block
-        m_codes = re.search(_CODES_DATA_PATTERN, local_text, flags=re.DOTALL)
-        if m_codes and re.search(_CODES_DATA_PATTERN, new_text, flags=re.DOTALL):
-            local_codes = m_codes.group(0)
-            new_text = re.sub(_CODES_DATA_PATTERN, lambda _: local_codes,
-                              new_text, count=1, flags=re.DOTALL)
+        local_codes, _, _ = _extract_braced_block(
+            local_text, _CODES_DATA_PATTERN, "[", "]")
+        if local_codes:
+            new_text = _splice_block(
+                new_text, _CODES_DATA_PATTERN, "[", "]", local_codes)
 
         tmp = SCRIPT_PATH.with_name(SCRIPT_PATH.name + ".new")
         tmp.write_text(new_text, encoding="utf-8")
