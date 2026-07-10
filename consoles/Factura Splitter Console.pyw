@@ -127,7 +127,7 @@ A4_WIDTH = 595
 # ==============================================================================
 # REMOTE SUPPORT — bug reporting + self-update
 # ==============================================================================
-APP_NAME = "Split Factura by CBY (Mass Print)"
+APP_NAME = "Factura Splitter Console"
 APP_VERSION = "1.0.2"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
@@ -136,7 +136,7 @@ BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/f
 
 UPDATE_MANIFEST_URL = (
     "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/"
-    "manifests/factura-split-console.json"
+    "manifests/factura-splitter-console.json"
 )
 
 
@@ -411,7 +411,7 @@ class FacturaSplitApp:
         ctk.set_appearance_mode("Light")
         ctk.set_default_color_theme("blue")
         self.root = ctk.CTk()
-        self.root.title(f"Split Factura by CBY (Mass Print)  v{APP_VERSION}")
+        self.root.title(f"{APP_NAME}  v{APP_VERSION}")
         self.root.configure(fg_color=BG)
         w, h = 720, 600
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
