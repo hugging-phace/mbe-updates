@@ -48,9 +48,8 @@ SMTP_SERVER = "smtp.office365.com"
 SMTP_PORT = 587
 KEYRING_SERVICE_NAME = "MBE_Automation_CBY"
 SENDER_EMAIL = "cby@mbe.ky"
-GEMINI_API_KEYS = [
-    "AQ.Ab8RN6KO-PdXfRqHyvdJQdh3I1MFW0vfUzzAL3ZKEbMgS7A-wQ"
-]
+OPENROUTER_API_KEY = "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"
+OPENROUTER_MODEL = "openai/gpt-oss-20b:free"
 
 HELPFUL_LINKS_PRESETS = {
     "--- Select a Preset Link (Optional) ---": {"receiver_text": "", "url": ""},
@@ -781,11 +780,9 @@ def process_queue():
             return
 
         def make_call():
-            last_error = None
-            for api_key in GEMINI_API_KEYS:
-                try:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={api_key}"
-                    prompt = f"""You are a grammar and clarity assistant. Your task is to improve the grammar, spelling, punctuation, capitalization, and readability of the following text.
+            try:
+                url = "https://openrouter.ai/api/v1/chat/completions"
+                prompt = f"""You are a grammar and clarity assistant. Your task is to improve the grammar, spelling, punctuation, capitalization, and readability of the following text.
 
 IMPORTANT RULES:
 - Prioritize grammar and clarity corrections over content rewriting
@@ -812,34 +809,27 @@ IMPORTANT RULES:
 Text to improve:
 {current_text}"""
 
-                    payload = {
-                        "contents": [{"parts": [{"text": prompt}]}]
-                    }
+                payload = {
+                    "model": OPENROUTER_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 500,
+                }
 
-                    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-                    with urllib.request.urlopen(req) as response:
-                        res_data = json.loads(response.read().decode())
-                        polished = res_data["candidates"][0]["content"]["parts"][0]["text"]
-                        
-                        if not polished or not polished.strip():
-                            raise Exception("Empty response from API")
+                req = urllib.request.Request(
+                    url, data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json",
+                             "Authorization": f"Bearer {OPENROUTER_API_KEY}"})
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    res_data = json.loads(response.read().decode())
+                    polished = res_data["choices"][0]["message"]["content"]
 
-                    root.after(0, lambda p=polished: start_text_fade(lambda: update_reason(p)))
-                    return
-                except urllib.error.HTTPError as e:
-                    last_error = str(e)
-                    error_lower = last_error.lower()
-                    if "429" in error_lower or "quota" in error_lower or "rate limit" in error_lower or "resource exhausted" in error_lower:
-                        continue
-                    else:
-                        root.after(0, lambda err=last_error: handle_ai_failure(err))
-                        return
-                except Exception as e:
-                    last_error = str(e)
-                    root.after(0, lambda err=last_error: handle_ai_failure(err))
-                    return
+                    if not polished or not polished.strip():
+                        raise Exception("Empty response from API")
 
-            root.after(0, lambda err=last_error or "All API keys failed": handle_ai_failure(err))
+                root.after(0, lambda p=polished: start_text_fade(lambda: update_reason(p)))
+            except Exception as e:
+                err = str(e)
+                root.after(0, lambda e=err: handle_ai_failure(e))
 
         threading.Thread(target=make_call, daemon=True).start()
 
