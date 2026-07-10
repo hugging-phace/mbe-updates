@@ -15,6 +15,7 @@ import getpass
 import urllib.request
 import uuid
 import subprocess
+import traceback
 from datetime import datetime
 from collections import Counter
 import io
@@ -623,6 +624,153 @@ def _post_to_discord(content):
             return False, f"Server returned status {resp.status}"
     except Exception as e:
         return False, str(e)
+
+
+# ==============================================================================
+# AUTOMATIC ERROR REPORTING
+#   Every messagebox.showerror(...) call in this file — and any otherwise
+#   unhandled exception raised inside a Tkinter callback anywhere in the
+#   app — is routed through this enhanced dialog. It adds a "Report Issue"
+#   button that sends the exact error text (plus a traceback, for crashes)
+#   straight to the developer's Discord, so remote colleagues don't have
+#   to describe the problem or screen-share.
+# ==============================================================================
+def _send_error_report(title, detail, window_name=""):
+    """Send a diagnostic error report straight to the developer's Discord."""
+    try:
+        user = getpass.getuser()
+    except Exception:
+        user = "unknown"
+    host = platform.node() or "unknown"
+    content = (
+        f"**Auto Error Report - {APP_NAME}**\n"
+        f"**Window:** {window_name or 'unknown'}\n"
+        f"**Title:** {title}\n"
+        f"**From:** {user}@{host}\n"
+        f"**Version:** {APP_VERSION}\n"
+        f"**When:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+        f"**Details:**\n{detail}"
+    )
+    return _post_to_discord(content)
+
+
+_tk_messagebox_showerror = messagebox.showerror  # keep the real one as a fallback
+
+
+def _show_error_with_report(title="Error", message="", parent=None,
+                            traceback_text=None, window_name="", **kwargs):
+    """Drop-in replacement for messagebox.showerror that adds a
+    'Report Issue' button next to OK."""
+    try:
+        win = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
+    except Exception:
+        return _tk_messagebox_showerror(title, message, **kwargs)
+
+    win.title(title or "Error")
+    win.configure(bg="#1a1a2e")
+    win.resizable(False, False)
+    try:
+        win.attributes("-topmost", True)
+    except Exception:
+        pass
+    try:
+        win.grab_set()
+    except Exception:
+        pass
+
+    msg_text = str(message) if message is not None else ""
+    lines = msg_text.count("\n") + 1
+    w = 460
+    h = min(420, max(170, 100 + lines * 16))
+    try:
+        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+        win.geometry(f"{w}x{h}+{int((sw-w)/2)}+{int((sh-h)/2)}")
+    except Exception:
+        pass
+
+    tk.Label(win, text="\u26a0  " + (title or "Error"), bg="#1a1a2e",
+             fg="#ff6b6b", font=(MODERN_FONT, 13, "bold"),
+             anchor="w", justify="left").pack(fill="x", padx=16, pady=(14, 6))
+
+    text_frame = tk.Frame(win, bg="#1a1a2e")
+    text_frame.pack(fill="both", expand=True, padx=16)
+    txt = tk.Text(text_frame, wrap="word", bg="#0f0f1a", fg="#e8e8e8",
+                  relief="flat", font=(MODERN_FONT, 10), height=8,
+                  highlightthickness=0, padx=8, pady=8)
+    txt.insert("1.0", msg_text)
+    txt.configure(state="disabled")
+    txt.pack(fill="both", expand=True)
+
+    btn_frame = tk.Frame(win, bg="#1a1a2e")
+    btn_frame.pack(fill="x", padx=16, pady=(10, 14))
+
+    status_lbl = tk.Label(btn_frame, text="", bg="#1a1a2e",
+                          fg="#888888", font=(MODERN_FONT, 9))
+    status_lbl.pack(side="left")
+
+    full_report = msg_text if not traceback_text else (
+        f"{msg_text}\n\n--- Traceback ---\n{traceback_text}")
+
+    def _report():
+        report_btn.configure(state="disabled", text="Sending...")
+        def worker():
+            ok, err = _send_error_report(title or "Error", full_report, window_name)
+            def done():
+                if ok:
+                    status_lbl.configure(text="Report sent \u2014 thank you!", fg="#4caf50")
+                    report_btn.configure(text="Sent \u2713")
+                else:
+                    status_lbl.configure(text=f"Failed to send: {err}", fg="#ff6b6b")
+                    report_btn.configure(state="normal", text="Report Issue")
+            try:
+                win.after(0, done)
+            except Exception:
+                pass
+        threading.Thread(target=worker, daemon=True).start()
+
+    report_btn = tk.Button(btn_frame, text="Report Issue", command=_report,
+                           bg="#b8860b", fg="white", activebackground="#daa520",
+                           activeforeground="white", relief="flat",
+                           font=(MODERN_FONT, 10, "bold"), padx=12, pady=5,
+                           cursor="hand2", bd=0)
+    report_btn.pack(side="right", padx=(6, 0))
+
+    ok_btn = tk.Button(btn_frame, text="OK", command=win.destroy,
+                       bg="#333344", fg="white", activebackground="#44445a",
+                       activeforeground="white", relief="flat",
+                       font=(MODERN_FONT, 10, "bold"), padx=18, pady=5,
+                       cursor="hand2", bd=0)
+    ok_btn.pack(side="right")
+
+    win.protocol("WM_DELETE_WINDOW", win.destroy)
+    try:
+        win.wait_window(win)
+    except Exception:
+        pass
+
+
+messagebox.showerror = _show_error_with_report
+
+
+def _tk_global_exception_handler(exc_type, exc_value, exc_tb):
+    """Installed as root.report_callback_exception — catches ANY otherwise
+    unhandled exception raised inside a Tkinter callback anywhere in the
+    app (button clicks, bindings, etc.) and shows the same enhanced error
+    dialog with a full traceback attached to the report."""
+    try:
+        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    except Exception:
+        tb_text = f"{exc_type}: {exc_value}"
+    print(tb_text)  # still visible in the console window for local debugging
+    try:
+        _show_error_with_report(
+            "Unexpected Error",
+            f"Something went wrong:\n\n{exc_value}\n\n"
+            f"This wasn't a message we expected, so please use 'Report Issue'\n"
+            f"below to send the details straight to the developer.",
+            traceback_text=tb_text)
+    except Exception:
+        pass
 
 
 def _generate_case_number():
@@ -1538,6 +1686,7 @@ class SupportMixin:
 class Launcher:
     def __init__(self):
         self.root = ctk.CTk()
+        self.root.report_callback_exception = _tk_global_exception_handler
         self.root.title("XML Declaration Builder")
         self.root.configure(fg_color=LAUNCHER_BG)
         w, h = 420, 370
@@ -1676,10 +1825,10 @@ class ConsoleWindow(SupportMixin):
         self.win = ctk.CTkToplevel(launcher.root)
         self.win.title(cfg["title"])
         self.win.configure(fg_color=c["bg"])
-        WIN_W, WIN_H = 1290, 720
+        WIN_W, WIN_H = 1290, 760
         sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
         self.win.geometry(f"{WIN_W}x{WIN_H}+{int((sw-WIN_W)/2)}+{max(0, int((sh-WIN_H)/2))}")
-        self.win.minsize(1100, 520)
+        self.win.minsize(1100, 560)
         self.win.protocol("WM_DELETE_WINDOW", self._close_all)
 
         self.header_entries = {}
@@ -5063,7 +5212,7 @@ class UploadWindow(SupportMixin):
         self.win = ctk.CTkToplevel()
         self.win.title("Upload Declarations to COLS")
         self.win.configure(fg_color="#0f0f1a")
-        w, h = 820, 560
+        w, h = 820, 610
         sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
         self.win.geometry(f"{w}x{h}+{int((sw-w)/2)}+{int((sh-h)/2)}")
 
@@ -7555,10 +7704,23 @@ class UploadWindow(SupportMixin):
         and formulas — no Excel process needed, no corruption.
         """
         if not self._decl_numbers:
-            messagebox.showwarning("No Declarations",
-                                   "No declaration numbers captured yet.\n"
-                                   "Upload files first to get declaration numbers.")
-            return
+            # They haven't copied/uploaded declaration numbers yet.
+            # Replicate the "Copy Decl #s from COLS" flow automatically
+            # so they see the same review dialog before pasting.
+            proceed = messagebox.askyesno(
+                "Copy Declaration Numbers First",
+                "You haven't copied any declaration numbers yet.\n\n"
+                "Click Yes to copy them from the COLS page now\n"
+                "(same as clicking 'Copy Decl #s from COLS').\n\n"
+                "You'll be able to review and confirm the list before\n"
+                "anything is pasted to the manifest.")
+            if not proceed:
+                return
+            self._copy_decl_from_cols()
+            if not self._decl_numbers:
+                # Copy step already showed its own message (no browser,
+                # nothing found, or the user cancelled the review dialog)
+                return
 
         file_path = filedialog.askopenfilename(
             title="Choose manifest file",
@@ -7568,14 +7730,30 @@ class UploadWindow(SupportMixin):
 
         # Build CBY -> decl map
         cby_to_decl = {}
+        master_decl = None
         for filename, decl_num in self._decl_numbers.items():
             m = re.search(r'CBY\s*(\d+)', filename, re.IGNORECASE)
             if m and decl_num:
                 cby_to_decl[m.group(1)] = decl_num
+            elif ("HBL-Master" in filename or "MBL" in filename) and decl_num:
+                master_decl = decl_num
 
-        if not cby_to_decl:
+        if not cby_to_decl and not master_decl:
             messagebox.showwarning("No Matches",
-                                   "No declaration numbers with matching CBY numbers found.")
+                "No declaration numbers with matching CBY numbers found.\n\n"
+                "The uploaded files don't have CBY numbers in their names,\n"
+                "or no house declarations were captured.\n\n"
+                "Make sure the house XML files (HBL-CBY*.xml) were uploaded\n"
+                "and their declaration numbers appear in the Declaration # column.")
+            return
+        if not cby_to_decl and master_decl:
+            messagebox.showwarning("No House Declarations",
+                "Only a Master declaration was found — no House/CBY declarations.\n\n"
+                "The Paste to Manifest feature needs house declaration numbers\n"
+                "(from HBL-CBY*.xml files) to match against CBY rows in the manifest.\n\n"
+                "Make sure the house XML files were uploaded and their declaration\n"
+                "numbers appear in the Declaration # column.\n\n"
+                f"Master declaration found: {master_decl}")
             return
 
         try:
