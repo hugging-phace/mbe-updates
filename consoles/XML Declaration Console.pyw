@@ -529,14 +529,14 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.7"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
 BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
 
 UPDATE_MANIFEST_URL = (
-    "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/"
+    "https://cdn.jsdelivr.net/gh/hugging-phace/mbe-updates@main/"
     "manifests/xml-declaration-console.json"
 )
 
@@ -1036,7 +1036,12 @@ def _post_update_applied(old_ver, new_ver):
 
 def _check_for_update():
     try:
-        data = json.loads(_http_get(UPDATE_MANIFEST_URL))
+        # Append a cache-busting query parameter so GitHub's CDN
+        # always fetches the latest version instead of serving a
+        # stale cached response (raw.githubusercontent.com can
+        # cache for 5+ minutes otherwise).
+        url = UPDATE_MANIFEST_URL + "?t=" + str(int(time.time()))
+        data = json.loads(_http_get(url))
         remote = data.get("version", "")
         if remote and _version_tuple(remote) > _version_tuple(APP_VERSION):
             return data

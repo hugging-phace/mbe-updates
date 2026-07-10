@@ -1,5 +1,5 @@
 {
-  "version": "1.0.7",
-  "changelog": "Test version for live update polling — if you see this, the 60-second periodic check is working!",
+  "version": "1.0.8",
+  "changelog": "Switched update manifest URL from raw.githubusercontent.com (5+ min CDN cache) to jsdelivr CDN (instant refresh) with cache-busting. Live update polling now detects new versions within 60 seconds instead of waiting for GitHub's CDN to catch up.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }
