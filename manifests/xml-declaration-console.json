@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
-  "changelog": "Added 'Check for Updates' button inside the Report a Bug dialog. Click the bug icon, then 'Check for Updates' to manually poll for new versions without relaunching. Shows an animated spinner while checking, then either 'Update Now - vXX' if a new version is available (leads to the same Restart Only / Restart + Restore Progress choice) or 'You're up to date' if not. This replaces periodic background polling — users check on their own terms.",
+  "version": "1.1.1",
+  "changelog": "Test version — if you see this, the Check for Updates button is working!",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }
