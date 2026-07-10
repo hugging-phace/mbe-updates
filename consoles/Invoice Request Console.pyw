@@ -49,9 +49,7 @@ SMTP_PORT = 587
 KEYRING_SERVICE_NAME = "MBE_Automation_CBY"
 SENDER_EMAIL = "cby@mbe.ky"
 GEMINI_API_KEYS = [
-    "AQ.Ab8RN6KKGm4-szjcx_xLOojf2AhitvnqKUzT1vX2HZju4V6D7Q",
-    "AQ.Ab8RN6JcEAELQ9msKeFiV8PtL7QMxkUiBSPOUuCg1GfxVMPgbQ",
-    "AQ.Ab8RN6K8XNRvDpRhJD_HadIiGrBrzVtHZhrOFpCwFhcP_MBydg"
+    "AQ.Ab8RN6KO-PdXfRqHyvdJQdh3I1MFW0vfUzzAL3ZKEbMgS7A-wQ"
 ]
 
 HELPFUL_LINKS_PRESETS = {
@@ -607,11 +605,11 @@ def process_queue():
 
     manifest_btn = ctk.CTkButton(
         root,
-        text="\U0001f4c2 Pull From Manifest",
+        text="\U0001f4c2 Pull Drafts From Manifest",
         command=on_pick_manifest,
         fg_color=EXCEL_GREEN,
         hover_color=EXCEL_GREEN_HOVER,
-        width=230,
+        width=260,
         height=28,
         corner_radius=6,
         font=(MODERN_FONT, 11, "bold"),
