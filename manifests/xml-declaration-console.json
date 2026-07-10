@@ -1,5 +1,5 @@
 {
-  "version": "1.1.7",
+  "version": "1.1.8",
   "changelog": "Full test: Check for Updates button should detect this version, download it, and after restart the bug icon should stay as a bug (not Apply Fixes) because the script version now matches the manifest.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }
