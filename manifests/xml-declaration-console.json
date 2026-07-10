@@ -1,5 +1,5 @@
 {
-  "version": "1.1.6",
-  "changelog": "Fixed: after applying an update and clicking 'Later', the bug icon now returns to the bug icon so you can still report issues. Previously it was stuck on 'Apply Fixes'. Also fixed word wrapping in the changelog box.",
+  "version": "1.1.7",
+  "changelog": "Full test: Check for Updates button should detect this version, download it, and after restart the bug icon should stay as a bug (not Apply Fixes) because the script version now matches the manifest.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }
