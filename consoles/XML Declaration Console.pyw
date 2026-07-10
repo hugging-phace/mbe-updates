@@ -529,7 +529,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
