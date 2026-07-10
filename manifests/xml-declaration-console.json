@@ -1,5 +1,5 @@
 {
-  "version": "1.0.6",
-  "changelog": "Session restore now uses a 'used' flag instead of a short timestamp. If the app crashes during a restart, the session file survives with used=false and will be restored on the next successful launch. The 'used' flag guarantees one-time use even if the temp file can't be deleted. A 24-hour safety net prevents stale files from haunting future sessions.",
+  "version": "1.0.7",
+  "changelog": "Test version for live update polling — if you see this, the 60-second periodic check is working!",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }
