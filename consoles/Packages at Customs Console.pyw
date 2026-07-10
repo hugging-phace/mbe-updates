@@ -15,6 +15,7 @@ import subprocess
 import importlib
 import json
 import threading
+import traceback
 import getpass
 import urllib.request
 import uuid
@@ -64,21 +65,72 @@ def _check_and_install_dependencies():
         root.destroy()
         return False
 
-    # Install missing packages one at a time
+    # Build pip command
     pip_args = [sys.executable, "-m", "pip", "install"]
     for _, pip_name in missing:
         pip_args.append(pip_name)
 
+    # Show a progress dialog while pip runs in a background thread
+    prog = tk.Toplevel(root)
+    prog.title("Installing Dependencies")
+    prog.configure(bg="#1a3a5c")
+    prog.resizable(False, False)
+    prog.transient(root)
     try:
-        result = subprocess.run(pip_args, capture_output=True, text=True)
-        if result.returncode != 0:
-            messagebox.showerror(
-                "Installation Failed",
-                f"Could not install packages:\n\n{result.stderr[:500]}")
-            root.destroy()
-            return False
-    except Exception as e:
-        messagebox.showerror("Installation Failed", f"Error running pip:\n{e}")
+        prog.grab_set()
+    except Exception:
+        pass
+    pw, ph = 380, 120
+    sw, sh = prog.winfo_screenwidth(), prog.winfo_screenheight()
+    prog.geometry(f"{pw}x{ph}+{(sw-pw)//2}+{(sh-ph)//2}")
+    try:
+        prog.attributes("-topmost", True)
+    except Exception:
+        pass
+
+    tk.Label(prog, text="Installing packages via pip...",
+             bg="#1a3a5c", fg="#ffffff",
+             font=("Segoe UI", 12, "bold")).pack(pady=(18, 8))
+
+    pkg_list = ", ".join(p for _, p in missing)
+    tk.Label(prog, text=pkg_list,
+             bg="#1a3a5c", fg="#aabbcc",
+             font=("Segoe UI", 9)).pack(pady=(0, 8))
+
+    # Indeterminate progress bar — pulses while pip runs
+    bar = ttk.Progressbar(prog, mode="indeterminate", length=320)
+    bar.pack(pady=(0, 14))
+    bar.start(15)
+
+    install_result = {"ok": False, "stderr": ""}
+
+    def _worker():
+        try:
+            r = subprocess.run(pip_args, capture_output=True, text=True)
+            install_result["ok"] = (r.returncode == 0)
+            install_result["stderr"] = r.stderr
+        except Exception as e:
+            install_result["ok"] = False
+            install_result["stderr"] = str(e)
+        try:
+            prog.after(0, prog.destroy)
+        except Exception:
+            pass
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+    # Modal wait — blocks until the worker destroys the dialog
+    try:
+        prog.wait_window(prog)
+    except Exception:
+        pass
+
+    bar.stop()
+
+    if not install_result["ok"]:
+        messagebox.showerror(
+            "Installation Failed",
+            f"Could not install packages:\n\n{install_result['stderr'][:500]}")
         root.destroy()
         return False
 
@@ -531,7 +583,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 #   never lost when the code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "Packages at Customs Console"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 DEVELOPER_NAME = "Atlas Ramoon"
 
 BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
@@ -789,6 +841,291 @@ COLUMNS = [
 
 
 # ==============================================================================
+# ERROR REPORTING INFRASTRUCTURE
+# Drop-in replacement for messagebox.showerror that adds a "Report Issue"
+# button for real errors (inside except blocks), sending the full traceback
+# to the developer's Discord.  Validation messages get a plain OK dialog.
+# ==============================================================================
+
+_WINDOW_NAME_REGISTRY = {}
+
+
+def _register_window_name(win, name, colors=None):
+    try:
+        _WINDOW_NAME_REGISTRY[str(win)] = (name, colors or {})
+    except Exception:
+        pass
+
+
+def _get_active_window_info():
+    try:
+        root = tk._default_root
+        if not root:
+            return "unknown", {}
+        focused = root.focus_get()
+        if focused is None:
+            return "unknown", {}
+        top = focused.winfo_toplevel()
+        entry = _WINDOW_NAME_REGISTRY.get(str(top))
+        if entry:
+            return entry[0], entry[1]
+        return "unknown", {}
+    except Exception:
+        return "unknown", {}
+
+
+def _send_error_report(title, detail, window_name=""):
+    try:
+        user = getpass.getuser()
+    except Exception:
+        user = "unknown"
+    host = platform.node() or "unknown"
+    header = (
+        f"**Auto Error Report - {APP_NAME}**\n"
+        f"**Window:** {window_name or 'unknown'}\n"
+        f"**Title:** {title}\n"
+        f"**From:** {user}@{host}\n"
+        f"**Version:** {APP_VERSION}\n"
+        f"**When:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+    )
+    full = header + f"**Details:**\n{detail}"
+    LIMIT = 1900
+    if len(full) <= LIMIT:
+        return _post_to_discord(full)
+    parts = []
+    while full:
+        if len(full) <= LIMIT:
+            parts.append(full)
+            break
+        cut = full.rfind("\n", 0, LIMIT)
+        if cut < LIMIT // 2:
+            cut = LIMIT
+        parts.append(full[:cut])
+        full = full[cut:].lstrip("\n")
+    ok_all = True
+    err_all = None
+    for i, part in enumerate(parts):
+        prefix = f"[{i+1}/{len(parts)}] " if len(parts) > 1 else ""
+        ok, err = _post_to_discord(prefix + part)
+        if not ok:
+            ok_all = False
+            err_all = err
+    return ok_all, err_all
+
+
+_tk_messagebox_showerror = messagebox.showerror
+
+
+def _show_error_with_report(title="Error", message="", parent=None,
+                            traceback_text=None, window_name="", **kwargs):
+    """Drop-in replacement for messagebox.showerror.
+
+    For REAL errors (called inside an active except block, or with an
+    explicit traceback_text), shows a 'Report Issue' button that sends
+    the full diagnostic to Discord.
+
+    For VALIDATION messages (called outside any except block), shows
+    a plain OK-only dialog.
+    """
+    if not window_name:
+        window_name, win_colors = _get_active_window_info()
+    else:
+        win_colors = {}
+
+    is_real_error = bool(traceback_text)
+    if not traceback_text:
+        try:
+            exc_type, exc_val, exc_tb = sys.exc_info()
+            if exc_type is not None:
+                traceback_text = "".join(
+                    traceback.format_exception(exc_type, exc_val, exc_tb))
+                is_real_error = True
+        except Exception:
+            pass
+
+    # Use the app's light colour scheme for the error dialog
+    dlg_bg     = win_colors.get("panel", BG)
+    input_bg   = win_colors.get("input", INPUT)
+    border_col = win_colors.get("border", BORDER)
+    accent     = win_colors.get("accent", ACCENT)
+    accent_h   = win_colors.get("accent_hover", ACCENT_H)
+    text_col   = win_colors.get("text", DARK)
+    muted_col  = win_colors.get("muted", MUTED)
+
+    try:
+        win = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
+    except Exception:
+        return _tk_messagebox_showerror(title, message, **kwargs)
+
+    win.title(title or "Error")
+    win.configure(bg=dlg_bg)
+    win.resizable(False, False)
+    try:
+        win.attributes("-topmost", True)
+    except Exception:
+        pass
+    try:
+        win.grab_set()
+    except Exception:
+        pass
+
+    msg_text = str(message) if message is not None else ""
+    lines = msg_text.count("\n") + 1
+    text_height = max(3, min(10, lines))
+    w = 460
+
+    _menu_font = ("Segoe UI", 11) if platform.system() == "Windows" else ("Helvetica", 13)
+
+    def _text_context_menu(event, text_widget, menu_bg):
+        try:
+            menu = tk.Menu(text_widget, tearoff=0, bg=menu_bg, fg=text_col,
+                           activebackground=accent, activeforeground="#ffffff",
+                           borderwidth=1, relief="solid", activeborderwidth=0,
+                           font=_menu_font)
+        except Exception:
+            menu = tk.Menu(text_widget, tearoff=0, bg=menu_bg, fg=text_col,
+                           activebackground=accent, activeforeground="#ffffff",
+                           font=_menu_font)
+        menu.add_command(label="Copy",
+                         command=lambda: text_widget.event_generate("<<Copy>>"))
+        menu.add_separator()
+        menu.add_command(label="Select All",
+                         command=lambda: text_widget.tag_add("sel", "1.0", "end"))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    tk.Label(win, text="\u26a0  " + (title or "Error"), bg=dlg_bg,
+             fg="#cc0000", font=(MODERN_FONT, 13, "bold"),
+             anchor="w", justify="left").pack(fill="x", padx=16, pady=(14, 6))
+
+    text_frame = tk.Frame(win, bg=dlg_bg)
+    text_frame.pack(fill="both", expand=True, padx=16)
+    txt = tk.Text(text_frame, wrap="word", bg=input_bg, fg=text_col,
+                  relief="solid", borderwidth=1, highlightbackground=border_col,
+                  highlightcolor=border_col, highlightthickness=1,
+                  font=(MODERN_FONT, 10), height=text_height,
+                  padx=8, pady=8)
+    txt.insert("1.0", msg_text)
+    txt.configure(state="disabled")
+    txt.pack(fill="both", expand=True)
+    txt.bind("<Button-3>", lambda e: _text_context_menu(e, txt, input_bg))
+
+    tb_frame = None
+    tb_text_widget = None
+    if traceback_text:
+        tb_toggle = tk.Label(win, text="\u25b6 Show details", bg=dlg_bg,
+                             fg=muted_col, font=(MODERN_FONT, 9, "underline"),
+                             cursor="hand2", anchor="w")
+        tb_toggle.pack(fill="x", padx=16, pady=(4, 0))
+
+        tb_frame = tk.Frame(win, bg=input_bg)
+        tb_text_widget = tk.Text(tb_frame, wrap="word", bg=input_bg,
+                                 fg=muted_col, relief="flat",
+                                 font=(MODERN_FONT, 8), height=10,
+                                 highlightthickness=0, padx=8, pady=6)
+        tb_text_widget.insert("1.0", traceback_text)
+        tb_text_widget.configure(state="disabled")
+        tb_text_widget.bind("<Button-3>", lambda e: _text_context_menu(e, tb_text_widget, input_bg))
+
+        def _toggle_tb(event=None):
+            if tb_frame.winfo_ismapped():
+                tb_frame.pack_forget()
+                tb_toggle.configure(text="\u25b6 Show details")
+            else:
+                tb_frame.pack(fill="both", expand=False, padx=16, pady=(2, 4))
+                tb_text_widget.pack(fill="both", expand=True)
+                tb_toggle.configure(text="\u25bc Hide details")
+            win.update_idletasks()
+            try:
+                req_h = win.winfo_reqheight()
+                h = max(200, min(600, req_h))
+                sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+                win.geometry(f"{w}x{h}+{int((sw-w)/2)}+{int((sh-h)/2)}")
+            except Exception:
+                pass
+        tb_toggle.bind("<Button-1>", _toggle_tb)
+
+    btn_frame = tk.Frame(win, bg=dlg_bg)
+    btn_frame.pack(fill="x", padx=16, pady=(10, 14))
+
+    status_lbl = tk.Label(btn_frame, text="", bg=dlg_bg,
+                          fg=muted_col, font=(MODERN_FONT, 9))
+    status_lbl.pack(side="left")
+
+    full_report = msg_text if not traceback_text else (
+        f"{msg_text}\n\n--- Traceback ---\n{traceback_text}")
+
+    if is_real_error:
+        def _report():
+            report_btn.configure(state="disabled", text="Sending...")
+            def worker():
+                ok, err = _send_error_report(title or "Error", full_report, window_name)
+                def done():
+                    if ok:
+                        status_lbl.configure(text="Report sent \u2014 thank you!", fg=GREEN)
+                        report_btn.configure(text="Sent \u2713")
+                    else:
+                        status_lbl.configure(text=f"Failed to send: {err}", fg="#cc0000")
+                        report_btn.configure(state="normal", text="Report Issue")
+                try:
+                    win.after(0, done)
+                except Exception:
+                    pass
+            threading.Thread(target=worker, daemon=True).start()
+
+        report_btn = tk.Button(btn_frame, text="Report Issue", command=_report,
+                               bg=accent, fg="white", activebackground=accent_h,
+                               activeforeground="white", relief="flat",
+                               font=(MODERN_FONT, 10, "bold"), padx=14, pady=5,
+                               cursor="hand2", bd=0)
+        report_btn.pack(side="right", padx=(6, 0))
+
+    ok_btn = tk.Button(btn_frame, text="OK", command=win.destroy,
+                       bg="#555566", fg="white", activebackground="#666677",
+                       activeforeground="white", relief="flat",
+                       font=(MODERN_FONT, 10, "bold"), padx=18, pady=5,
+                       cursor="hand2", bd=0)
+    ok_btn.pack(side="right")
+
+    try:
+        win.update_idletasks()
+        req_h = win.winfo_reqheight()
+        h = max(200, min(500, req_h))
+        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+        win.geometry(f"{w}x{h}+{int((sw-w)/2)}+{int((sh-h)/2)}")
+    except Exception:
+        pass
+
+    win.protocol("WM_DELETE_WINDOW", win.destroy)
+    try:
+        win.wait_window(win)
+    except Exception:
+        pass
+
+
+messagebox.showerror = _show_error_with_report
+
+
+def _tk_global_exception_handler(exc_type, exc_value, exc_tb):
+    try:
+        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    except Exception:
+        tb_text = f"{exc_type}: {exc_value}"
+    print(tb_text)
+    try:
+        _show_error_with_report(
+            "Unexpected Error",
+            f"Something went wrong:\n\n{exc_value}\n\n"
+            f"This wasn't a message we expected, so please use 'Report Issue'\n"
+            f"below to send the details straight to the developer.",
+            traceback_text=tb_text)
+    except Exception:
+        pass
+
+
+# ==============================================================================
 # PACKAGES AT CUSTOMS CONSOLE
 # ==============================================================================
 class CustomsConsole:
@@ -800,6 +1137,12 @@ class CustomsConsole:
         self.root = ctk.CTk()
         self.root.title(f"Packages at Customs — ADD Status Log  v{APP_VERSION}")
         self.root.configure(fg_color=BG)
+        self.root.report_callback_exception = _tk_global_exception_handler
+        _register_window_name(self.root, "Customs Console", {
+            "bg": BG, "panel": BG, "input": INPUT, "border": BORDER,
+            "accent": ACCENT, "accent_hover": ACCENT_H,
+            "text": DARK, "muted": MUTED, "light": LIGHT,
+        })
 
         WIN_W, WIN_H = 1200, 740
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()

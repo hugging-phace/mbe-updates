@@ -1,5 +1,5 @@
 {
-  "version": "1.0.3",
-  "changelog": "Added 'Check for Updates' button inside the Report a Bug dialog — click the bug icon, then 'Check for Updates' to manually poll for new versions without relaunching. Shows an animated spinner while checking, then either 'Update Now' if a new version is available or 'You're up to date' if not. Version number now shown dynamically in the title bar. Fixed word wrapping in the changelog box. Fixed bug icon clipping by increasing window height. After applying an update and clicking 'Later', the bug icon now returns to the bug icon so you can still report issues.",
+  "version": "1.0.4",
+  "changelog": "Added automated error reporting: real errors (caught exceptions) now show a 'Report Issue' button that sends the full traceback to the developer's Discord. Validation messages (e.g. 'No selection') remain plain OK dialogs. Unhandled crashes anywhere in the app are also caught and show the same reportable dialog. Right-click Copy/Select All on error text areas. Also added a progress bar with package names during dependency installation — no more blank screen while pip runs.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Packages%20at%20Customs%20Console.pyw"
 }
