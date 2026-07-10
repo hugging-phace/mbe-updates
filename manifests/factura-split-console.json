@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
-  "changelog": "Initial version with remote support.",
+  "version": "1.0.1",
+  "changelog": "Locate the Manifest worksheet automatically when another workbook tab is active.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Split%20Factura%20by%20CBY%20%28Mass%20Print%29.pyw"
 }

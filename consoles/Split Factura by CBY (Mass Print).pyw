@@ -128,7 +128,7 @@ A4_WIDTH = 595
 # REMOTE SUPPORT — bug reporting + self-update
 # ==============================================================================
 APP_NAME = "Split Factura by CBY (Mass Print)"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -357,6 +357,37 @@ def _attach_context_menu(widget):
     widget.bind("<Button-3>", _show_menu)
 
 
+REQUIRED_MANIFEST_HEADERS = {
+    "boxnum (cby)",
+    "package#",
+    "invoice",
+}
+
+
+def _find_manifest_worksheet(workbook):
+    for worksheet in workbook.worksheets:
+        if worksheet.title.strip().casefold() == "manifest":
+            return worksheet
+
+    for worksheet in workbook.worksheets:
+        first_row = next(
+            worksheet.iter_rows(min_row=1, max_row=1, values_only=True),
+            (),
+        )
+        headers = {
+            str(value).strip().casefold()
+            for value in first_row
+            if value is not None
+        }
+        if REQUIRED_MANIFEST_HEADERS.issubset(headers):
+            return worksheet
+
+    raise ValueError(
+        "Unable to locate the Manifest worksheet. The workbook must contain "
+        "the columns 'BoxNum (CBY)', 'Package#', and 'INVOICE'."
+    )
+
+
 # ==============================================================================
 # MAIN APPLICATION
 # ==============================================================================
@@ -559,30 +590,32 @@ class FacturaSplitApp:
     def _load_manifest(self):
         wb = openpyxl.load_workbook(self._manifest_path, read_only=True,
                                     data_only=True)
-        ws = wb.active
-        # Column C (3) = CBY, Column T (20) = Package#, Column U (21) = Invoice
-        # Row 1 = headers, data starts at row 2
-        self._rows = []
-        for row in ws.iter_rows(min_row=2, min_col=3, max_col=21,
-                                values_only=False):
-            cby_val = row[0].value  # column C (index 0 in our slice)
-            pkg_val = row[17].value  # column T (index 17 in our slice)
-            inv_val = row[18].value  # column U (index 18 in our slice)
-            if cby_val is None and pkg_val is None:
-                continue
-            cby = str(cby_val).strip() if cby_val is not None else ""
-            pkg = str(pkg_val).strip() if pkg_val is not None else ""
-            if pkg.endswith(".0"):
-                pkg = pkg[:-2]
-            if cby.endswith(".0"):
-                cby = cby[:-2]
-            inv = str(inv_val).strip() if inv_val is not None else ""
-            # Skip document rows (CBY 1000)
-            if cby == "1000":
-                continue
-            if pkg:
-                self._rows.append((cby, pkg, inv))
-        wb.close()
+        try:
+            ws = _find_manifest_worksheet(wb)
+            # Column C (3) = CBY, Column T (20) = Package#, Column U (21) = Invoice
+            # Row 1 = headers, data starts at row 2
+            self._rows = []
+            for row in ws.iter_rows(min_row=2, min_col=3, max_col=21,
+                                    values_only=False):
+                cby_val = row[0].value  # column C (index 0 in our slice)
+                pkg_val = row[17].value  # column T (index 17 in our slice)
+                inv_val = row[18].value  # column U (index 18 in our slice)
+                if cby_val is None and pkg_val is None:
+                    continue
+                cby = str(cby_val).strip() if cby_val is not None else ""
+                pkg = str(pkg_val).strip() if pkg_val is not None else ""
+                if pkg.endswith(".0"):
+                    pkg = pkg[:-2]
+                if cby.endswith(".0"):
+                    cby = cby[:-2]
+                inv = str(inv_val).strip() if inv_val is not None else ""
+                # Skip document rows (CBY 1000)
+                if cby == "1000":
+                    continue
+                if pkg:
+                    self._rows.append((cby, pkg, inv))
+        finally:
+            wb.close()
 
         # Populate treeview
         self.tree.delete(*self.tree.get_children())
