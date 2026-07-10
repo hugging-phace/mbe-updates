@@ -529,7 +529,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -1498,6 +1498,17 @@ class SupportMixin:
                 self.win.after(0, self._refresh_support_icon)
             except Exception:
                 pass
+        # Schedule next periodic check in 60 seconds.
+        # The timer starts AFTER this check completes, so a slow
+        # network won't cause overlapping requests.  If the window
+        # is destroyed, the after() call silently fails and the
+        # chain stops — no zombie threads.
+        try:
+            self.win.after(60000,
+                lambda: threading.Thread(
+                    target=self._check_update_bg, daemon=True).start())
+        except Exception:
+            pass
 
     def _refresh_support_icon(self):
         try:
@@ -1785,7 +1796,8 @@ class SupportMixin:
             anchor="w", padx=16, pady=(14, 2))
         ctk.CTkLabel(
             dlg,
-            text=f"From {DEVELOPER_NAME}. Your data will be preserved.",
+            text=f"From {DEVELOPER_NAME}. Click Apply Fixes to download,\n"
+                 f"then choose how to restart.",
             font=(MODERN_FONT, 11), text_color=self._SUP_DLG_MUTED,
             anchor="w").pack(anchor="w", padx=16, pady=(0, 8))
 
@@ -1814,11 +1826,9 @@ class SupportMixin:
                     target=lambda: _post_update_applied(old_ver, new_ver),
                     daemon=True).start()
                 dlg.destroy()
-                if messagebox.askyesno("Update Applied",
-                    f"Updated to version {new_ver}.\n\n"
-                    "The console needs to restart to apply the changes.\n"
-                    "Restart now?"):
-                    self._restart_app()
+                # Show a restart-choice dialog with two options:
+                # "Restart Only" and "Restart + Restore Progress".
+                self._show_restart_choice(new_ver)
             else:
                 apply_btn.configure(state="normal", text="Apply Fixes")
                 messagebox.showerror("Update Failed",
@@ -1836,8 +1846,200 @@ class SupportMixin:
                       height=30, corner_radius=5,
                       font=(MODERN_FONT, 11)).pack(side="left", padx=(8, 0))
 
+    def _show_restart_choice(self, new_ver):
+        """After an update is downloaded, ask the user how to restart.
+        Offers two options: plain restart, or restart with session
+        preservation (saves UploadWindow treeview + decl numbers)."""
+        dlg = ctk.CTkToplevel(self.win)
+        dlg.title("Restart to Apply")
+        dlg.configure(fg_color=self._SUP_DLG_BG)
+        dlg.transient(self.win)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+        w, h = 420, 220
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+
+        ctk.CTkLabel(dlg, text=f"Updated to v{new_ver}",
+                     font=(MODERN_FONT, 15, "bold"),
+                     text_color=self._SUP_DLG_LIGHT).pack(
+            anchor="w", padx=20, pady=(18, 4))
+        ctk.CTkLabel(dlg,
+            text="The console needs to restart to apply the changes.\n"
+                 "Choose how you'd like to restart:",
+            font=(MODERN_FONT, 11), text_color=self._SUP_DLG_MUTED,
+            anchor="w", justify="left").pack(anchor="w", padx=20, pady=(0, 12))
+
+        btns = ctk.CTkFrame(dlg, fg_color="transparent")
+        btns.pack(side="bottom", fill="x", padx=16, pady=(0, 16))
+
+        def _restart_only():
+            dlg.destroy()
+            self._restart_app(preserve_session=False)
+
+        def _restart_preserve():
+            dlg.destroy()
+            self._restart_app(preserve_session=True)
+
+        ctk.CTkButton(btns, text="Restart Only",
+                      command=_restart_only,
+                      fg_color="#667788", hover_color="#556677",
+                      width=130, height=32, corner_radius=6,
+                      font=(MODERN_FONT, 11, "bold")).pack(side="left")
+        ctk.CTkButton(btns, text="Restart + Restore Progress",
+                      command=_restart_preserve,
+                      fg_color="#b8860b", hover_color="#daa520",
+                      width=210, height=32, corner_radius=6,
+                      font=(MODERN_FONT, 11, "bold")).pack(side="left", padx=(8, 0))
+        ctk.CTkButton(btns, text="Later",
+                      command=dlg.destroy,
+                      fg_color="#444444", hover_color="#555555",
+                      width=70, height=32, corner_radius=6,
+                      font=(MODERN_FONT, 11)).pack(side="left", padx=(8, 0))
+
+    # ---- Session save / restore (for live bug-fix restarts) ------------
+    # When the user clicks "Restart + Restore Progress", we serialize the
+    # UploadWindow's treeview rows + declaration numbers to a temp JSON
+    # file.  On the next launch, UploadWindow.__init__ calls
+    # _restore_session() which reads it back, repopulates the tree, and
+    # deletes the file.  A timestamp inside the JSON ensures it can only
+    # be used once — even if the file can't be deleted (locked temp dir,
+    # antivirus, etc.), the 5-minute expiry window means it will never
+    # be restored on a future session.
+
+    _SESSION_FILE = "mbe_session_restore.json"
+    _SESSION_EXPIRY_SECONDS = 300  # 5 minutes
+
+    def _save_session_for_restore(self):
+        """Serialize the UploadWindow's treeview + decl data to a temp
+        JSON file so it can be restored after a restart-restart update.
+        Cross-platform: uses tempfile.gettempdir()."""
+        import tempfile, os, json, datetime
+
+        # Find the UploadWindow via the launcher — it holds the
+        # declaration numbers and treeview that we want to preserve.
+        upload_win = None
+        try:
+            upload_win = self.launcher._upload_win
+        except Exception:
+            pass
+        if not upload_win:
+            return False
+
+        try:
+            rows = []
+            for item in upload_win._tree.get_children():
+                vals = upload_win._tree.set(item)
+                rows.append({
+                    "file":   vals.get("file", ""),
+                    "cby":    vals.get("cby", ""),
+                    "status": vals.get("status", ""),
+                    "docs":   vals.get("docs", ""),
+                    "decl":   vals.get("decl", ""),
+                })
+
+            session = {
+                "written_at": datetime.datetime.now().isoformat(),
+                "rows": rows,
+                "decl_numbers": dict(upload_win._decl_numbers),
+                "master_decl": upload_win._master_decl,
+                "xml_folder": str(upload_win._xml_folder) if upload_win._xml_folder else None,
+            }
+
+            path = os.path.join(tempfile.gettempdir(), self._SESSION_FILE)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(session, f)
+            return True
+        except Exception:
+            return False
+
+    def _restore_session(self):
+        """Check for a session-restore JSON in the temp folder.
+        If it exists and is fresh (< 5 min old), restore treeview rows
+        and declaration data.  Then try to delete the file regardless.
+        Returns True if data was restored, False otherwise."""
+        import tempfile, os, json, datetime
+
+        path = os.path.join(tempfile.gettempdir(), self._SESSION_FILE)
+        if not os.path.exists(path):
+            return False
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                session = json.load(f)
+        except Exception:
+            # Corrupted file — try to delete, move on.
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+            return False
+
+        # Check freshness — reject anything older than 5 minutes.
+        # This guarantees the file can only be used once: even if it
+        # can't be deleted (locked folder, antivirus, etc.), the
+        # timestamp expires and no future session will ever read it.
+        try:
+            written = datetime.datetime.fromisoformat(session["written_at"])
+            age = (datetime.datetime.now() - written).total_seconds()
+            if age > self._SESSION_EXPIRY_SECONDS:
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+                return False
+        except Exception:
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+            return False
+
+        # Restore treeview rows
+        restored_count = 0
+        try:
+            for row in session.get("rows", []):
+                self._tree.insert("", "end", values=(
+                    row.get("file", ""),
+                    row.get("cby", ""),
+                    row.get("status", ""),
+                    row.get("docs", ""),
+                    row.get("decl", ""),
+                ))
+                restored_count += 1
+        except Exception:
+            pass
+
+        # Restore declaration data
+        try:
+            self._decl_numbers = dict(session.get("decl_numbers", {}))
+        except Exception:
+            self._decl_numbers = {}
+        try:
+            self._master_decl = session.get("master_decl", "")
+        except Exception:
+            self._master_decl = ""
+        try:
+            folder = session.get("xml_folder")
+            if folder:
+                from pathlib import Path
+                self._xml_folder = Path(folder)
+        except Exception:
+            pass
+
+        # Delete the file — one-time use.  If it fails, the 5-minute
+        # timestamp above ensures it can never be used again anyway.
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+        return restored_count > 0
+
     # ---- Restart --------------------------------------------------------
-    def _restart_app(self):
+    def _restart_app(self, preserve_session=False):
+        if preserve_session:
+            self._save_session_for_restore()
         try:
             subprocess.Popen([sys.executable, str(SCRIPT_PATH)])
         except Exception:
@@ -5641,6 +5843,15 @@ class UploadWindow(SupportMixin):
         self._attach_support_icon(status_frame)
 
         self.win.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # Restore session if we're restarting after a live update
+        restored = self._restore_session()
+        if restored:
+            try:
+                self._status.configure(
+                    text="Restored from previous session. Ready to paste or upload.")
+            except Exception:
+                pass
 
         # Check for updates in the background
         threading.Thread(target=self._check_update_bg, daemon=True).start()
