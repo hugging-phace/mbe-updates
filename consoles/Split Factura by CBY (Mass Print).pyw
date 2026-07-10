@@ -255,6 +255,21 @@ def _check_for_update():
     return None
 
 
+# ------------------------------------------------------------------
+# Self-update — plain overwrite (NO data splice), intentionally.
+#
+# Unlike the other consoles (Packages = CUSTOMS_DATA, XML =
+# BUILTIN_TIN_NUMBERS + BUILTIN_CODES, Ocean Cargo = EMAIL_LOOKUP), this
+# console has NO user-edited embedded data block: it processes selected
+# PDF files and keeps all state in memory only, and never writes user
+# data back into its own .pyw. There is therefore nothing to preserve,
+# so we simply replace the whole file with the downloaded version.
+#
+# If a persisted/user-editable data block is ever added to this script,
+# adopt the same splice-preservation pattern used by the other consoles
+# (extract the local block, splice it into new_text before os.replace)
+# so user entries aren't wiped on update.
+# ------------------------------------------------------------------
 def _download_and_apply_update(new_url):
     try:
         new_text = _http_get(new_url, timeout=30)

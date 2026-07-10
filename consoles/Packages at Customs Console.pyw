@@ -769,6 +769,23 @@ def _check_for_update():
     return None
 
 
+# ------------------------------------------------------------------
+# Self-update with local-data preservation.
+#
+# Update contract: the public GitHub copy of this script MUST ship with
+# an EMPTY data block (CUSTOMS_DATA = []) so no customer information is
+# ever published. Each user's live data lives ONLY in their local .pyw.
+#
+# On update we download the fresh GitHub version, re-read THIS running
+# file to extract the local CUSTOMS_DATA block, and splice that local
+# block back into the downloaded text via _splice_block() before the
+# atomic os.replace(). That is what makes updates "splice local data in,
+# never overwrite user entries."
+#
+# DO NOT remove the _splice_block() call or the local-block extraction,
+# and DO NOT rename the CUSTOMS_DATA marker (see _DATA_BLOCK_PATTERN).
+# Doing either would wipe every user's entries on the next update.
+# ------------------------------------------------------------------
 def _download_and_apply_update(new_url):
     try:
         new_text = _http_get(new_url, timeout=30)
@@ -786,7 +803,22 @@ def _download_and_apply_update(new_url):
         return False, str(e)
 
 # ------------------------------------------------------------------
-# Embedded data — saved inside this script file (no external Excel)
+# Embedded data — saved inside this script file (no external Excel).
+#
+# CUSTOMS_DATA holds the LIVE user data written by the running app
+# (see _save_to_excel, which rewrites this block in place). It is the
+# block that _download_and_apply_update preserves via _splice_block.
+#
+# The public GitHub copy of this file MUST keep this exactly empty:
+#     CUSTOMS_DATA = []
+# so customer package data is never published. Local machines populate
+# it at runtime; those local entries survive updates because the marker
+# name below is matched by _DATA_BLOCK_PATTERN and spliced back in.
+#
+# Do NOT rename this "CUSTOMS_DATA" marker: it is part of the update
+# contract. Renaming it here without also updating _DATA_BLOCK_PATTERN
+# (and _save_to_excel) will silently wipe every user's entries on the
+# next update.
 # ------------------------------------------------------------------
 CUSTOMS_DATA = []
 

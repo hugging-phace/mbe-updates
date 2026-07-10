@@ -1045,6 +1045,25 @@ def _check_for_update():
     return None
 
 
+# ------------------------------------------------------------------
+# Self-update with local-data preservation.
+#
+# Update contract: the public GitHub copy of this script MUST ship with
+# BOTH embedded data blocks empty (BUILTIN_TIN_NUMBERS = {} and
+# BUILTIN_CODES = []) so no customer TIN/importer data is ever published.
+# Each user's live data lives ONLY in their local .pyw.
+#
+# On update we download the fresh GitHub version, re-read THIS running
+# file to extract the local BUILTIN_TIN_NUMBERS and BUILTIN_CODES blocks,
+# and splice BOTH local blocks back into the downloaded text via
+# _splice_block() before the atomic os.replace(). That is what makes
+# updates "splice local data in, never overwrite user entries."
+#
+# DO NOT remove either _splice_block() call or the local-block
+# extraction, and DO NOT rename the BUILTIN_TIN_NUMBERS / BUILTIN_CODES
+# markers (see _TIN_DATA_PATTERN / _CODES_DATA_PATTERN). Doing either
+# would wipe every user's entries on the next update.
+# ------------------------------------------------------------------
 def _download_and_apply_update(new_url):
     """Download the new script and apply it, preserving embedded data blocks."""
     try:
@@ -1075,6 +1094,24 @@ def _download_and_apply_update(new_url):
 
 FALLBACK_IMPORTER_NUMBER = "21640166"
 
+# ------------------------------------------------------------------
+# Embedded data block #1 — LIVE customer TIN / importer numbers.
+#
+# BUILTIN_TIN_NUMBERS holds live user data written by the running app
+# (the TIN editor re-reads this block on disk and MERGES on save, so a
+# concurrent edit from another user on shared storage isn't clobbered).
+# It is one of the two blocks that _download_and_apply_update preserves
+# via _splice_block (matched by _TIN_DATA_PATTERN).
+#
+# The public GitHub copy of this file MUST keep this exactly empty:
+#     BUILTIN_TIN_NUMBERS = {}
+# so customer TIN/importer data is never published.
+#
+# Do NOT rename this "BUILTIN_TIN_NUMBERS" marker: it is part of the
+# update contract. Renaming it without also updating _TIN_DATA_PATTERN
+# (and the TIN save/load code) will silently wipe user entries on the
+# next update.
+# ------------------------------------------------------------------
 BUILTIN_TIN_NUMBERS = {}
 
 MASTER_IMPORTER_DEFAULT = "20000561"
@@ -1084,6 +1121,21 @@ DEFAULT_COMMODITY_CODE = "98010029"
 PROCEDURE_OPTIONS = ["HOME", "BLD MAT", "SCHOOL", "RETAILER", "SPCL ECO ZONE"]
 UNIT_OPTIONS = ["NO", "KG", "G", "L", "LB", "M2", "M3", "PCS", "PR", "DOZ"]
 
+# ------------------------------------------------------------------
+# Embedded data block #2 — LIVE commodity-code table.
+#
+# BUILTIN_CODES holds live user data written by the running app (the
+# codes editor re-reads this block on disk and MERGES on save so
+# concurrent edits from other users aren't lost). It is the second of
+# the two blocks that _download_and_apply_update preserves via
+# _splice_block (matched by _CODES_DATA_PATTERN).
+#
+# The public GitHub copy of this file MUST keep this exactly empty:
+#     BUILTIN_CODES = []
+# Do NOT rename this "BUILTIN_CODES" marker: it is part of the update
+# contract. Renaming it without also updating _CODES_DATA_PATTERN (and
+# the codes save/load code) will silently wipe user entries on update.
+# ------------------------------------------------------------------
 BUILTIN_CODES = []
 
 
