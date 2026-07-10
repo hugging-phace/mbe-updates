@@ -1,5 +1,5 @@
 {
-  "version": "1.1.5",
-  "changelog": "Fixed word wrapping in the Fixes Available changelog box so words don't split across lines.",
+  "version": "1.1.6",
+  "changelog": "Test version — if you see this, the Check for Updates button is working! Words should wrap properly in this box without splitting letters across lines.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }
