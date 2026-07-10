@@ -1,5 +1,5 @@
 {
-  "version": "1.0.3",
-  "changelog": "The 'No Matches' and 'No House Declarations' warnings in Paste to Manifest are now reportable: they include a Report Issue button and a Show Details section listing exactly which filenames and declaration numbers were captured, so the developer can see why matching failed without a screen-share.",
+  "version": "1.0.4",
+  "changelog": "Fix: non-numeric declaration values are now skipped instead of written as strings, which could corrupt the manifest. Only numeric values are written via the zip-editing method.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }

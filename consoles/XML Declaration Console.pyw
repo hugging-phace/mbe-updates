@@ -529,7 +529,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -8050,7 +8050,7 @@ class UploadWindow(SupportMixin):
                                 try:
                                     mval = int(self._master_decl)
                                 except (ValueError, TypeError):
-                                    mval = str(self._master_decl).strip()
+                                    break  # skip master, don't write non-numeric
                                 writes.append((cell.row, cell.column + 1, mval))
                                 pasted += 1
                             break
@@ -8078,12 +8078,15 @@ class UploadWindow(SupportMixin):
                     if decl:
                         decl_cell = row[decl_col - 1] if decl_col <= len(row) else None
                         if decl_cell and not decl_cell.value:
-                            # Guard against non-numeric declaration values —
-                            # write as-is (string) rather than crashing on int().
+                            # Only write numeric declaration values — the
+                            # zip-editing method writes <v>...</v> which is
+                            # only valid for numbers.  Non-numeric values
+                            # would produce invalid Excel XML and corrupt
+                            # the file.  Skip them instead.
                             try:
                                 write_val = int(decl)
                             except (ValueError, TypeError):
-                                write_val = str(decl).strip()
+                                continue  # skip this cell, don't write
                             writes.append((decl_cell.row, decl_cell.column, write_val))
                             pasted += 1
 
