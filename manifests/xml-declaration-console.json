@@ -1,5 +1,5 @@
 {
-  "version": "1.0.8",
-  "changelog": "Switched update manifest URL from raw.githubusercontent.com (5+ min CDN cache) to jsdelivr CDN (instant refresh) with cache-busting. Live update polling now detects new versions within 60 seconds instead of waiting for GitHub's CDN to catch up.",
+  "version": "1.0.9",
+  "changelog": "Reverted periodic update polling — updates are checked on launch only, so pushing multiple iterations to git won't bombard users with prompts. Session restore remains available (Upload window only) when clicking Apply Fixes. Fixed restart dialog button colors and 'Later' button clipping. Switched update manifest URL to jsdelivr CDN for faster refresh when users do relaunch.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }

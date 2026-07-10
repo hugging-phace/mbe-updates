@@ -529,7 +529,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.0.9"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -1503,17 +1503,6 @@ class SupportMixin:
                 self.win.after(0, self._refresh_support_icon)
             except Exception:
                 pass
-        # Schedule next periodic check in 60 seconds.
-        # The timer starts AFTER this check completes, so a slow
-        # network won't cause overlapping requests.  If the window
-        # is destroyed, the after() call silently fails and the
-        # chain stops — no zombie threads.
-        try:
-            self.win.after(60000,
-                lambda: threading.Thread(
-                    target=self._check_update_bg, daemon=True).start())
-        except Exception:
-            pass
 
     def _refresh_support_icon(self):
         try:
@@ -1861,7 +1850,7 @@ class SupportMixin:
         dlg.transient(self.win)
         dlg.grab_set()
         dlg.resizable(False, False)
-        w, h = 420, 220
+        w, h = 480, 220
         sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
         dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
@@ -1876,7 +1865,7 @@ class SupportMixin:
             anchor="w", justify="left").pack(anchor="w", padx=20, pady=(0, 12))
 
         btns = ctk.CTkFrame(dlg, fg_color="transparent")
-        btns.pack(side="bottom", fill="x", padx=16, pady=(0, 16))
+        btns.pack(side="bottom", fill="x", padx=20, pady=(0, 16))
 
         def _restart_only():
             dlg.destroy()
@@ -1888,19 +1877,19 @@ class SupportMixin:
 
         ctk.CTkButton(btns, text="Restart Only",
                       command=_restart_only,
-                      fg_color="#667788", hover_color="#556677",
-                      width=130, height=32, corner_radius=6,
+                      fg_color="#2471a3", hover_color="#3498db",
+                      width=120, height=32, corner_radius=6,
                       font=(MODERN_FONT, 11, "bold")).pack(side="left")
         ctk.CTkButton(btns, text="Restart + Restore Progress",
                       command=_restart_preserve,
                       fg_color="#b8860b", hover_color="#daa520",
-                      width=210, height=32, corner_radius=6,
+                      width=200, height=32, corner_radius=6,
                       font=(MODERN_FONT, 11, "bold")).pack(side="left", padx=(8, 0))
         ctk.CTkButton(btns, text="Later",
                       command=dlg.destroy,
                       fg_color="#444444", hover_color="#555555",
                       width=70, height=32, corner_radius=6,
-                      font=(MODERN_FONT, 11)).pack(side="left", padx=(8, 0))
+                      font=(MODERN_FONT, 11)).pack(side="right")
 
     # ---- Session save / restore (for live bug-fix restarts) ------------
     # When the user clicks "Restart + Restore Progress", we serialize the
