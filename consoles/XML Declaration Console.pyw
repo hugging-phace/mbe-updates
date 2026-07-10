@@ -529,7 +529,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.1.0"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -1557,6 +1557,68 @@ class SupportMixin:
             anchor="w", justify="left").pack(
             anchor="w", padx=16, pady=(0, 6))
 
+        # ---- Check for Updates bar ----
+        update_bar = ctk.CTkFrame(dlg, fg_color="transparent")
+        update_bar.pack(fill="x", padx=16, pady=(0, 6))
+
+        check_btn = ctk.CTkButton(
+            update_bar, text="Check for Updates",
+            command=lambda: None,  # set below
+            fg_color=self._SUP_DLG_ACCENT, hover_color=self._SUP_DLG_ACCENT_H,
+            width=140, height=26, corner_radius=4,
+            font=(MODERN_FONT, 10, "bold"))
+        check_btn.pack(side="left")
+
+        update_status = ctk.CTkLabel(
+            update_bar, text="",
+            font=(MODERN_FONT, 10), text_color=self._SUP_DLG_MUTED,
+            anchor="w")
+        update_status.pack(side="left", padx=(10, 0))
+
+        # Spinner animation state
+        _spin = {"frame": 0, "running": False}
+
+        def _spin_step():
+            if not _spin["running"]:
+                return
+            _spin["frame"] = (_spin["frame"] + 1) % 8
+            dots = "." * ((_spin["frame"] % 4) + 1)
+            update_status.configure(text=f"Checking{dots}")
+            dlg.after(200, _spin_step)
+
+        def _do_check():
+            _spin["running"] = True
+            check_btn.configure(state="disabled", text="Checking...")
+            _spin_step()
+
+            def _worker():
+                result = _check_for_update()
+                dlg.after(0, lambda: _check_done(result))
+
+            threading.Thread(target=_worker, daemon=True).start()
+
+        def _check_done(result):
+            _spin["running"] = False
+            check_btn.configure(state="normal", text="Check for Updates")
+            if result:
+                ver = result.get("version", "?")
+                self._pending_update = result
+                update_status.configure(
+                    text=f"v{ver} available!",
+                    text_color=self._SUP_DLG_LIGHT)
+                # Replace the check button with an "Update Now" button
+                check_btn.configure(
+                    text=f"Update Now \u2014 v{ver}",
+                    command=self._apply_fixes_dialog,
+                    fg_color="#b8860b", hover_color="#daa520",
+                    width=180)
+            else:
+                update_status.configure(
+                    text=f"You're up to date (v{APP_VERSION})",
+                    text_color=self._SUP_DLG_MUTED)
+
+        check_btn.configure(command=_do_check)
+
         # Category selector
         cat_frame = ctk.CTkFrame(dlg, fg_color="transparent")
         cat_frame.pack(fill="x", padx=16, pady=(0, 4))
@@ -1611,7 +1673,8 @@ class SupportMixin:
         ctk.CTkLabel(info,
             text=f"\u2022 {DEVELOPER_NAME} will review your report within "
                  f"24-48 hours\n"
-                 f"\u2022 When a fix is ready, the bug icon will change to "
+                 f"\u2022 When a fix is ready, click 'Check for Updates' above\n"
+                 f"   or relaunch the console \u2014 the bug icon will show "
                  f"'Apply Fixes'\n"
                  f"\u2022 {DEVELOPER_NAME} will coordinate with management if "
                  f"the fix\n"
