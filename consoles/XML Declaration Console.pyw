@@ -529,14 +529,14 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
 BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
 
 UPDATE_MANIFEST_URL = (
-    "https://cdn.jsdelivr.net/gh/hugging-phace/mbe-updates@main/"
+    "https://api.github.com/repos/hugging-phace/mbe-updates/contents/"
     "manifests/xml-declaration-console.json"
 )
 
@@ -602,8 +602,13 @@ def _version_tuple(v):
 
 
 def _http_get(url, timeout=10):
-    req = urllib.request.Request(
-        url, headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
+    headers = {"User-Agent": f"{APP_NAME}/{APP_VERSION}"}
+    # GitHub API contents endpoint returns a JSON wrapper with
+    # base64-encoded content unless we request the raw media type.
+    # This also bypasses all CDN caching — always fresh.
+    if "api.github.com" in url:
+        headers["Accept"] = "application/vnd.github.v3.raw"
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8")
 
@@ -1036,12 +1041,7 @@ def _post_update_applied(old_ver, new_ver):
 
 def _check_for_update():
     try:
-        # Append a cache-busting query parameter so GitHub's CDN
-        # always fetches the latest version instead of serving a
-        # stale cached response (raw.githubusercontent.com can
-        # cache for 5+ minutes otherwise).
-        url = UPDATE_MANIFEST_URL + "?t=" + str(int(time.time()))
-        data = json.loads(_http_get(url))
+        data = json.loads(_http_get(UPDATE_MANIFEST_URL))
         remote = data.get("version", "")
         if remote and _version_tuple(remote) > _version_tuple(APP_VERSION):
             return data
