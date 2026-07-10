@@ -529,7 +529,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "1.1.5"
+APP_VERSION = "1.1.6"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -1877,6 +1877,15 @@ class SupportMixin:
                 threading.Thread(
                     target=lambda: _post_update_applied(old_ver, new_ver),
                     daemon=True).start()
+                # Clear the pending update so the bug icon goes back
+                # to 🐞 — the update is on disk, they just need to
+                # restart.  This way they can still report a new bug
+                # if they click "Later" instead of restarting.
+                self._pending_update = None
+                try:
+                    self.win.after(0, self._refresh_support_icon)
+                except Exception:
+                    pass
                 dlg.destroy()
                 # Show a restart-choice dialog with two options:
                 # "Restart Only" and "Restart + Restore Progress".

@@ -1,5 +1,5 @@
 {
   "version": "1.1.6",
-  "changelog": "Test version — if you see this, the Check for Updates button is working! Words should wrap properly in this box without splitting letters across lines.",
+  "changelog": "Fixed: after applying an update and clicking 'Later', the bug icon now returns to the bug icon so you can still report issues. Previously it was stuck on 'Apply Fixes'. Also fixed word wrapping in the changelog box.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }
