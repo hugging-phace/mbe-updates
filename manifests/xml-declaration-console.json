@@ -1,5 +1,5 @@
 {
-  "version": "1.1.4",
-  "changelog": "Switched back to raw.githubusercontent.com for all update checks (no rate limits). Note: GitHub's CDN may cache for up to 5 minutes, so a freshly pushed update may take a few minutes to appear when using 'Check for Updates'.",
+  "version": "1.1.5",
+  "changelog": "Fixed word wrapping in the Fixes Available changelog box so words don't split across lines.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }

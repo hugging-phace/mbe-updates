@@ -529,7 +529,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "1.1.3"
+APP_VERSION = "1.1.5"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -1857,7 +1857,7 @@ class SupportMixin:
             dlg, height=170, fg_color=self._SUP_DLG_INPUT,
             border_color=self._SUP_DLG_BORDER, border_width=1,
             corner_radius=4, text_color=self._SUP_DLG_LIGHT,
-            font=(MODERN_FONT, 11))
+            font=(MODERN_FONT, 11), wrap="word")
         box.pack(fill="both", expand=True, padx=16)
         box.insert("0.0", upd.get("changelog", "(no description provided)"))
         box.configure(state="disabled")
