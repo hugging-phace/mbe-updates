@@ -2023,6 +2023,22 @@ TEMPLATE_IMAGES = [
 # ==============================================================================
 # CLIENT EMAIL DIRECTORY  (baked in - managed via the 'All Client Emails' button)
 # ==============================================================================
+# EMAIL_LOOKUP holds LIVE customer email data written by the running app.
+# It lives between the CLIENT_MARKER_START / CLIENT_MARKER_END markers so
+# _download_and_apply_update can splice this local block into a freshly
+# downloaded GitHub version (see that function below). That splice is what
+# makes updates "splice local data in, never overwrite user entries."
+#
+# Update contract:
+#   * The public GitHub copy of this file MUST keep this block empty
+#     (EMAIL_LOOKUP = {}) so no customer email data is ever published.
+#   * Saves re-read the on-disk block and merge (see
+#     save_client_emails_to_script / parse_email_lookup_from_text) so
+#     concurrent edits from other users on shared storage aren't lost.
+#   * Do NOT rename/move/remove the CLIENT_MARKER_START / CLIENT_MARKER_END
+#     lines below or the splice call: the marker text is part of the update
+#     contract and any change here would wipe user entries on the next
+#     update (or leak real data into the public copy).
 # === CLIENT EMAILS START (auto-managed - edited via the 'All Client Emails' button) ===
 EMAIL_LOOKUP = {}
 # === CLIENT EMAILS END ===
@@ -2143,6 +2159,20 @@ def _check_for_update():
     return None
 
 
+# ------------------------------------------------------------------
+# Self-update with local-data preservation.
+#
+# The local EMAIL_LOOKUP block (between CLIENT_MARKER_START and
+# CLIENT_MARKER_END) is re-read from THIS running file and spliced into
+# the freshly downloaded GitHub version before it is written back, so
+# user-managed client emails are preserved across updates and never
+# overwritten. The public GitHub copy ships with EMAIL_LOOKUP = {}.
+#
+# DO NOT remove this splice, and DO NOT rename/move the
+# CLIENT_MARKER_START / CLIENT_MARKER_END markers: the marker text is
+# part of the update contract and changing it here would wipe every
+# user's saved emails on the next update.
+# ------------------------------------------------------------------
 def _download_and_apply_update(new_url):
     """Download the new script, splice in the local EMAIL_LOOKUP block, and overwrite."""
     new_source = _http_get(new_url, timeout=30)
