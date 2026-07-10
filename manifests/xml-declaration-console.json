@@ -1,5 +1,5 @@
 {
-  "version": "1.0.5",
-  "changelog": "Live update checking: the bug icon now polls for updates every 60 seconds and flips to 'Apply Fixes' in real time when a new version is pushed. After applying fixes, you can choose 'Restart Only' or 'Restart + Restore Progress' — the latter saves your Upload window's treeview (file names, CBY numbers, declaration numbers, statuses) to a temp file and restores it after restart, so you don't lose captured data during a live bug fix. The temp file expires after 5 minutes and can only be used once, so old data never reappears on future sessions. Works offline — periodic check silently fails when no internet.",
+  "version": "1.0.6",
+  "changelog": "Session restore now uses a 'used' flag instead of a short timestamp. If the app crashes during a restart, the session file survives with used=false and will be restored on the next successful launch. The 'used' flag guarantees one-time use even if the temp file can't be deleted. A 24-hour safety net prevents stale files from haunting future sessions.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }

@@ -529,7 +529,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -1900,15 +1900,25 @@ class SupportMixin:
     # ---- Session save / restore (for live bug-fix restarts) ------------
     # When the user clicks "Restart + Restore Progress", we serialize the
     # UploadWindow's treeview rows + declaration numbers to a temp JSON
-    # file.  On the next launch, UploadWindow.__init__ calls
-    # _restore_session() which reads it back, repopulates the tree, and
-    # deletes the file.  A timestamp inside the JSON ensures it can only
-    # be used once — even if the file can't be deleted (locked temp dir,
-    # antivirus, etc.), the 5-minute expiry window means it will never
-    # be restored on a future session.
+    # file with "used": false.  On the next launch, UploadWindow.__init__
+    # calls _restore_session() which:
+    #   1. Reads the JSON
+    #   2. Checks "used" is false and the file is < 24 hours old
+    #   3. Restores the data into the treeview + dicts
+    #   4. Marks "used": true and writes it back
+    #   5. Tries to delete the file
+    #
+    # The "used" flag is the primary one-time-use guarantee: even if the
+    # file can't be deleted (locked temp dir, antivirus, strict perms),
+    # it will never be restored again because "used" is true.
+    #
+    # The 24-hour timestamp is a safety net for edge cases like a crash
+    # during restart — the file survives with "used": false, and the
+    # next successful launch picks it up.  But after 24 hours it's
+    # considered stale and ignored, so it can't haunt someone days later.
 
     _SESSION_FILE = "mbe_session_restore.json"
-    _SESSION_EXPIRY_SECONDS = 300  # 5 minutes
+    _SESSION_EXPIRY_SECONDS = 86400  # 24 hours (safety net only)
 
     def _save_session_for_restore(self):
         """Serialize the UploadWindow's treeview + decl data to a temp
@@ -1940,6 +1950,7 @@ class SupportMixin:
 
             session = {
                 "written_at": datetime.datetime.now().isoformat(),
+                "used": False,
                 "rows": rows,
                 "decl_numbers": dict(upload_win._decl_numbers),
                 "master_decl": upload_win._master_decl,
@@ -1955,8 +1966,9 @@ class SupportMixin:
 
     def _restore_session(self):
         """Check for a session-restore JSON in the temp folder.
-        If it exists and is fresh (< 5 min old), restore treeview rows
-        and declaration data.  Then try to delete the file regardless.
+        If it exists, is unused ("used": false), and is < 24 hours old,
+        restore treeview rows and declaration data.  Then mark it as
+        used and try to delete the file.
         Returns True if data was restored, False otherwise."""
         import tempfile, os, json, datetime
 
@@ -1975,10 +1987,19 @@ class SupportMixin:
                 pass
             return False
 
-        # Check freshness — reject anything older than 5 minutes.
-        # This guarantees the file can only be used once: even if it
-        # can't be deleted (locked folder, antivirus, etc.), the
-        # timestamp expires and no future session will ever read it.
+        # Check "used" flag — primary one-time-use guarantee.
+        # If already used, this file can never be restored again,
+        # even if it couldn't be deleted last time.
+        if session.get("used", False):
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+            return False
+
+        # Safety net: reject anything older than 24 hours.  This handles
+        # the case where a file persists for days (locked temp dir) —
+        # we don't want stale data from last week reappearing.
         try:
             written = datetime.datetime.fromisoformat(session["written_at"])
             age = (datetime.datetime.now() - written).total_seconds()
@@ -2027,8 +2048,18 @@ class SupportMixin:
         except Exception:
             pass
 
-        # Delete the file — one-time use.  If it fails, the 5-minute
-        # timestamp above ensures it can never be used again anyway.
+        # Mark as used and write back — this is the one-time-use lock.
+        # Even if the delete fails, the "used": true flag prevents any
+        # future session from restoring the same data again.
+        try:
+            session["used"] = True
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(session, f)
+        except Exception:
+            pass
+
+        # Now try to delete the file.  If it fails, the "used" flag
+        # above guarantees it won't be used again.
         try:
             os.remove(path)
         except Exception:
