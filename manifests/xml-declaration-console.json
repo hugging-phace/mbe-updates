@@ -1,5 +1,5 @@
 {
-  "version": "1.0.1",
-  "changelog": "Any error popup now has a 'Report Issue' button that sends the details straight to the developer's Discord (no screen-share needed). Crashes are caught automatically too. Paste Declarations to Manifest now auto-copies from COLS first if needed. Air/Ocean and Upload windows are a bit taller so the bug icon isn't clipped on some monitors.",
+  "version": "1.0.2",
+  "changelog": "Error dialogs now match the color scheme of whichever window they appear in (Ocean green, Air purple, etc.) and include a right-click Copy/Select All menu. Real errors (inside except blocks) show a 'Report Issue' button that sends the full traceback to Discord; validation messages (like 'enter AWB first') do not. Paste to Manifest now auto-runs Copy from COLS first if needed, guards against non-numeric declaration values instead of crashing, and gives clearer permission error messages. Window heights increased to prevent the bug icon from being clipped.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }

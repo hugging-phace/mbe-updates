@@ -529,7 +529,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -635,23 +635,82 @@ def _post_to_discord(content):
 #   straight to the developer's Discord, so remote colleagues don't have
 #   to describe the problem or screen-share.
 # ==============================================================================
+_WINDOW_NAME_REGISTRY = {}  # str(toplevel widget) -> (name, colors_dict)
+
+
+def _register_window_name(win, name, colors=None):
+    """Remember which human-readable name (and optional colour scheme) belongs
+    to a given Toplevel, so error reports can say exactly which window the
+    error came from and match its visual style."""
+    try:
+        _WINDOW_NAME_REGISTRY[str(win)] = (name, colors or {})
+    except Exception:
+        pass
+
+
+def _get_active_window_info():
+    """Best-effort guess at which window is currently active/focused.
+    Returns (window_name, colors_dict)."""
+    try:
+        root = tk._default_root
+        if not root:
+            return "unknown", {}
+        focused = root.focus_get()
+        if focused is None:
+            return "unknown", {}
+        top = focused.winfo_toplevel()
+        entry = _WINDOW_NAME_REGISTRY.get(str(top))
+        if entry:
+            return entry[0], entry[1]
+        return "unknown", {}
+    except Exception:
+        return "unknown", {}
+
+
 def _send_error_report(title, detail, window_name=""):
-    """Send a diagnostic error report straight to the developer's Discord."""
+    """Send a diagnostic error report straight to the developer's Discord.
+    If the message is too long for a single Discord message (2000 char
+    limit), it is split across multiple messages so the full traceback
+    always arrives."""
     try:
         user = getpass.getuser()
     except Exception:
         user = "unknown"
     host = platform.node() or "unknown"
-    content = (
+    header = (
         f"**Auto Error Report - {APP_NAME}**\n"
         f"**Window:** {window_name or 'unknown'}\n"
         f"**Title:** {title}\n"
         f"**From:** {user}@{host}\n"
         f"**Version:** {APP_VERSION}\n"
         f"**When:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-        f"**Details:**\n{detail}"
     )
-    return _post_to_discord(content)
+    full = header + f"**Details:**\n{detail}"
+    # Discord's message limit is 2000 chars.  Leave room for the
+    # "(continued)" marker and split on a newline boundary if possible.
+    LIMIT = 1900
+    if len(full) <= LIMIT:
+        return _post_to_discord(full)
+    # Multi-part send
+    parts = []
+    while full:
+        if len(full) <= LIMIT:
+            parts.append(full)
+            break
+        cut = full.rfind("\n", 0, LIMIT)
+        if cut < LIMIT // 2:
+            cut = LIMIT
+        parts.append(full[:cut])
+        full = full[cut:].lstrip("\n")
+    ok_all = True
+    err_all = None
+    for i, part in enumerate(parts):
+        prefix = f"[{i+1}/{len(parts)}] " if len(parts) > 1 else ""
+        ok, err = _post_to_discord(prefix + part)
+        if not ok:
+            ok_all = False
+            err_all = err
+    return ok_all, err_all
 
 
 _tk_messagebox_showerror = messagebox.showerror  # keep the real one as a fallback
@@ -659,15 +718,55 @@ _tk_messagebox_showerror = messagebox.showerror  # keep the real one as a fallba
 
 def _show_error_with_report(title="Error", message="", parent=None,
                             traceback_text=None, window_name="", **kwargs):
-    """Drop-in replacement for messagebox.showerror that adds a
-    'Report Issue' button next to OK."""
+    """Drop-in replacement for messagebox.showerror.
+
+    For REAL errors (called inside an active except block, or with an
+    explicit traceback_text), shows a 'Report Issue' button that sends
+    the full diagnostic to Discord.
+
+    For VALIDATION messages (called outside any except block — e.g.
+    'Please enter the AWB first', 'No line items to generate'), shows
+    a plain OK-only dialog.  These aren't bugs worth reporting.
+    """
+    # Figure out which window this error came from and its colour scheme.
+    if not window_name:
+        window_name, win_colors = _get_active_window_info()
+    else:
+        win_colors = {}
+
+    # Detect whether we're inside an active except block.  If yes, this is
+    # a real error → auto-attach the traceback and show the Report button.
+    # If no, it's a validation message → plain dialog, no Report button.
+    is_real_error = bool(traceback_text)
+    if not traceback_text:
+        try:
+            exc_type, exc_val, exc_tb = sys.exc_info()
+            if exc_type is not None:
+                traceback_text = "".join(
+                    traceback.format_exception(exc_type, exc_val, exc_tb))
+                is_real_error = True
+        except Exception:
+            pass
+
+    # Resolve colours to match the Report-a-Bug dialog exactly:
+    #   dialog background = panel, text area = input, borders = border,
+    #   text = text, muted = light, buttons = accent / accent_hover.
+    # Fall back to a neutral dark palette if the window didn't register any.
+    dlg_bg     = win_colors.get("panel", "#1a1a2e")
+    input_bg   = win_colors.get("input", "#0f0f1a")
+    border_col = win_colors.get("border", "#333333")
+    accent     = win_colors.get("accent", "#b8860b")
+    accent_h   = win_colors.get("accent_hover", "#daa520")
+    text_col   = win_colors.get("text", "#e8e8e8")
+    muted_col  = win_colors.get("light", "#aaaaaa")
+
     try:
         win = tk.Toplevel(parent) if parent is not None else tk.Toplevel()
     except Exception:
         return _tk_messagebox_showerror(title, message, **kwargs)
 
     win.title(title or "Error")
-    win.configure(bg="#1a1a2e")
+    win.configure(bg=dlg_bg)
     win.resizable(False, False)
     try:
         win.attributes("-topmost", True)
@@ -680,60 +779,121 @@ def _show_error_with_report(title="Error", message="", parent=None,
 
     msg_text = str(message) if message is not None else ""
     lines = msg_text.count("\n") + 1
+    text_height = max(3, min(10, lines))
     w = 460
-    h = min(420, max(170, 100 + lines * 16))
-    try:
-        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-        win.geometry(f"{w}x{h}+{int((sw-w)/2)}+{int((sh-h)/2)}")
-    except Exception:
-        pass
 
-    tk.Label(win, text="\u26a0  " + (title or "Error"), bg="#1a1a2e",
+    # Helper: colour-aware right-click menu for read-only Text widgets
+    # (Copy + Select All only — no Cut or Paste since the text is disabled).
+    _menu_font = ("Segoe UI", 11) if platform.system() == "Windows" else ("Helvetica", 13)
+
+    def _text_context_menu(event, text_widget, menu_bg):
+        try:
+            menu = tk.Menu(text_widget, tearoff=0, bg=menu_bg, fg=text_col,
+                           activebackground=accent, activeforeground="#ffffff",
+                           borderwidth=1, relief="solid", activeborderwidth=0,
+                           font=_menu_font)
+        except Exception:
+            menu = tk.Menu(text_widget, tearoff=0, bg=menu_bg, fg=text_col,
+                           activebackground=accent, activeforeground="#ffffff",
+                           font=_menu_font)
+        menu.add_command(label="Copy",
+                         command=lambda: text_widget.event_generate("<<Copy>>"))
+        menu.add_separator()
+        menu.add_command(label="Select All",
+                         command=lambda: text_widget.tag_add("sel", "1.0", "end"))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    tk.Label(win, text="\u26a0  " + (title or "Error"), bg=dlg_bg,
              fg="#ff6b6b", font=(MODERN_FONT, 13, "bold"),
              anchor="w", justify="left").pack(fill="x", padx=16, pady=(14, 6))
 
-    text_frame = tk.Frame(win, bg="#1a1a2e")
+    text_frame = tk.Frame(win, bg=dlg_bg)
     text_frame.pack(fill="both", expand=True, padx=16)
-    txt = tk.Text(text_frame, wrap="word", bg="#0f0f1a", fg="#e8e8e8",
-                  relief="flat", font=(MODERN_FONT, 10), height=8,
-                  highlightthickness=0, padx=8, pady=8)
+    txt = tk.Text(text_frame, wrap="word", bg=input_bg, fg=text_col,
+                  relief="solid", borderwidth=1, highlightbackground=border_col,
+                  highlightcolor=border_col, highlightthickness=1,
+                  font=(MODERN_FONT, 10), height=text_height,
+                  padx=8, pady=8)
     txt.insert("1.0", msg_text)
     txt.configure(state="disabled")
     txt.pack(fill="both", expand=True)
+    txt.bind("<Button-3>", lambda e: _text_context_menu(e, txt, input_bg))
 
-    btn_frame = tk.Frame(win, bg="#1a1a2e")
+    # Collapsible traceback — only for real errors.
+    tb_frame = None
+    tb_text_widget = None
+    if traceback_text:
+        tb_toggle = tk.Label(win, text="\u25b6 Show details", bg=dlg_bg,
+                             fg=muted_col, font=(MODERN_FONT, 9, "underline"),
+                             cursor="hand2", anchor="w")
+        tb_toggle.pack(fill="x", padx=16, pady=(4, 0))
+
+        tb_frame = tk.Frame(win, bg=input_bg)
+        tb_text_widget = tk.Text(tb_frame, wrap="word", bg=input_bg,
+                                 fg=muted_col, relief="flat",
+                                 font=(MODERN_FONT, 8), height=10,
+                                 highlightthickness=0, padx=8, pady=6)
+        tb_text_widget.insert("1.0", traceback_text)
+        tb_text_widget.configure(state="disabled")
+        tb_text_widget.bind("<Button-3>", lambda e: _text_context_menu(e, tb_text_widget, input_bg))
+
+        def _toggle_tb(event=None):
+            if tb_frame.winfo_ismapped():
+                tb_frame.pack_forget()
+                tb_toggle.configure(text="\u25b6 Show details")
+            else:
+                tb_frame.pack(fill="both", expand=False, padx=16, pady=(2, 4))
+                tb_text_widget.pack(fill="both", expand=True)
+                tb_toggle.configure(text="\u25bc Hide details")
+            win.update_idletasks()
+            try:
+                req_h = win.winfo_reqheight()
+                h = max(200, min(600, req_h))
+                sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+                win.geometry(f"{w}x{h}+{int((sw-w)/2)}+{int((sh-h)/2)}")
+            except Exception:
+                pass
+        tb_toggle.bind("<Button-1>", _toggle_tb)
+
+    btn_frame = tk.Frame(win, bg=dlg_bg)
     btn_frame.pack(fill="x", padx=16, pady=(10, 14))
 
-    status_lbl = tk.Label(btn_frame, text="", bg="#1a1a2e",
-                          fg="#888888", font=(MODERN_FONT, 9))
+    status_lbl = tk.Label(btn_frame, text="", bg=dlg_bg,
+                          fg=muted_col, font=(MODERN_FONT, 9))
     status_lbl.pack(side="left")
 
     full_report = msg_text if not traceback_text else (
         f"{msg_text}\n\n--- Traceback ---\n{traceback_text}")
 
-    def _report():
-        report_btn.configure(state="disabled", text="Sending...")
-        def worker():
-            ok, err = _send_error_report(title or "Error", full_report, window_name)
-            def done():
-                if ok:
-                    status_lbl.configure(text="Report sent \u2014 thank you!", fg="#4caf50")
-                    report_btn.configure(text="Sent \u2713")
-                else:
-                    status_lbl.configure(text=f"Failed to send: {err}", fg="#ff6b6b")
-                    report_btn.configure(state="normal", text="Report Issue")
-            try:
-                win.after(0, done)
-            except Exception:
-                pass
-        threading.Thread(target=worker, daemon=True).start()
+    # Only show the Report Issue button for real errors (inside except).
+    # Validation messages get a plain OK-only dialog.
+    if is_real_error:
+        def _report():
+            report_btn.configure(state="disabled", text="Sending...")
+            def worker():
+                ok, err = _send_error_report(title or "Error", full_report, window_name)
+                def done():
+                    if ok:
+                        status_lbl.configure(text="Report sent \u2014 thank you!", fg="#4caf50")
+                        report_btn.configure(text="Sent \u2713")
+                    else:
+                        status_lbl.configure(text=f"Failed to send: {err}", fg="#ff6b6b")
+                        report_btn.configure(state="normal", text="Report Issue")
+                try:
+                    win.after(0, done)
+                except Exception:
+                    pass
+            threading.Thread(target=worker, daemon=True).start()
 
-    report_btn = tk.Button(btn_frame, text="Report Issue", command=_report,
-                           bg="#b8860b", fg="white", activebackground="#daa520",
-                           activeforeground="white", relief="flat",
-                           font=(MODERN_FONT, 10, "bold"), padx=12, pady=5,
-                           cursor="hand2", bd=0)
-    report_btn.pack(side="right", padx=(6, 0))
+        report_btn = tk.Button(btn_frame, text="Report Issue", command=_report,
+                               bg=accent, fg="white", activebackground=accent_h,
+                               activeforeground="white", relief="flat",
+                               font=(MODERN_FONT, 10, "bold"), padx=12, pady=5,
+                               cursor="hand2", bd=0)
+        report_btn.pack(side="right", padx=(6, 0))
 
     ok_btn = tk.Button(btn_frame, text="OK", command=win.destroy,
                        bg="#333344", fg="white", activebackground="#44445a",
@@ -741,6 +901,18 @@ def _show_error_with_report(title="Error", message="", parent=None,
                        font=(MODERN_FONT, 10, "bold"), padx=18, pady=5,
                        cursor="hand2", bd=0)
     ok_btn.pack(side="right")
+
+    # Size the window to fit everything we just packed (label + text +
+    # button row) instead of guessing pixels from line count — guarantees
+    # the Report Issue / OK buttons are never clipped off-screen.
+    try:
+        win.update_idletasks()
+        req_h = win.winfo_reqheight()
+        h = max(200, min(500, req_h))
+        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+        win.geometry(f"{w}x{h}+{int((sw-w)/2)}+{int((sh-h)/2)}")
+    except Exception:
+        pass
 
     win.protocol("WM_DELETE_WINDOW", win.destroy)
     try:
@@ -1689,6 +1861,7 @@ class Launcher:
         self.root.report_callback_exception = _tk_global_exception_handler
         self.root.title("XML Declaration Builder")
         self.root.configure(fg_color=LAUNCHER_BG)
+        _register_window_name(self.root, "Launcher", {"bg": LAUNCHER_BG, "panel": LAUNCHER_PANEL, "accent": LAUNCHER_ACCENT, "accent_hover": "#1a4a7a", "text": "#e8e8e8"})
         w, h = 420, 370
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         self.root.geometry(f"{w}x{h}+{int((sw-w)/2)}+{int((sh-h)/2)}")
@@ -1825,6 +1998,7 @@ class ConsoleWindow(SupportMixin):
         self.win = ctk.CTkToplevel(launcher.root)
         self.win.title(cfg["title"])
         self.win.configure(fg_color=c["bg"])
+        _register_window_name(self.win, self._window_name, c)
         WIN_W, WIN_H = 1290, 760
         sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
         self.win.geometry(f"{WIN_W}x{WIN_H}+{int((sw-WIN_W)/2)}+{max(0, int((sh-WIN_H)/2))}")
@@ -3207,6 +3381,7 @@ class CodesWindow(SupportMixin):
         self.win = ctk.CTkToplevel()
         self.win.title("Commodity Codes Management")
         self.win.configure(fg_color="#0f1117")
+        _register_window_name(self.win, self._window_name, {"bg": "#0f1117", "panel": "#141a2a", "accent": "#0f3460", "accent_hover": "#1a4a7a", "text": "#c8d6e5"})
         self.win.geometry("900x600")
         sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
         self.win.geometry(f"+{int((sw-900)/2)}+{int((sh-600)/2)}")
@@ -3949,6 +4124,7 @@ class TINWindow(SupportMixin):
         self.win = ctk.CTkToplevel()
         self.win.title("TIN Numbers Management")
         self.win.configure(fg_color="#0f1117")
+        _register_window_name(self.win, self._window_name, {"bg": "#0f1117", "panel": "#141a2a", "accent": "#0f3460", "accent_hover": "#1a4a7a", "text": "#c8d6e5"})
         self.win.geometry("960x600")
         sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
         self.win.geometry(f"+{int((sw-960)/2)}+{int((sh-600)/2)}")
@@ -5212,6 +5388,7 @@ class UploadWindow(SupportMixin):
         self.win = ctk.CTkToplevel()
         self.win.title("Upload Declarations to COLS")
         self.win.configure(fg_color="#0f0f1a")
+        _register_window_name(self.win, self._window_name, {"bg": "#0f0f1a", "panel": "#1a1520", "accent": "#6c3483", "accent_hover": "#8e44ad", "text": "#e8e8e8"})
         w, h = 820, 610
         sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
         self.win.geometry(f"{w}x{h}+{int((sw-w)/2)}+{int((sh-h)/2)}")
@@ -7847,7 +8024,11 @@ class UploadWindow(SupportMixin):
                                     and cell.row <= 5)):
                             target = ws.cell(row=cell.row, column=cell.column + 1)
                             if not target.value:
-                                writes.append((cell.row, cell.column + 1, int(self._master_decl)))
+                                try:
+                                    mval = int(self._master_decl)
+                                except (ValueError, TypeError):
+                                    mval = str(self._master_decl).strip()
+                                writes.append((cell.row, cell.column + 1, mval))
                                 pasted += 1
                             break
                     else:
@@ -7874,7 +8055,13 @@ class UploadWindow(SupportMixin):
                     if decl:
                         decl_cell = row[decl_col - 1] if decl_col <= len(row) else None
                         if decl_cell and not decl_cell.value:
-                            writes.append((decl_cell.row, decl_cell.column, int(decl)))
+                            # Guard against non-numeric declaration values —
+                            # write as-is (string) rather than crashing on int().
+                            try:
+                                write_val = int(decl)
+                            except (ValueError, TypeError):
+                                write_val = str(decl).strip()
+                            writes.append((decl_cell.row, decl_cell.column, write_val))
                             pasted += 1
 
             wb.close()
@@ -7903,38 +8090,53 @@ class UploadWindow(SupportMixin):
                 self._status.configure(
                     text=f"Quick Paste: {pasted} declarations pasted to {file_path.name}")
             else:
-                self._show_manifest_open_error(file_path)
+                # _write_cells_to_xlsx returned False without raising —
+                # this means it couldn't find the sheet inside the xlsx zip
+                # structure.  Don't attempt an openpyxl save fallback — that
+                # can corrupt the manifest by stripping external links and
+                # drawings.  Instead, report the issue so it can be fixed.
+                raise RuntimeError(
+                    f"Could not locate the sheet '{cols_sheet_name}' inside the\n"
+                    f"xlsx zip structure. The manifest was not modified.")
 
         except Exception as e:
             if "permission" in str(e).lower() or isinstance(e, PermissionError):
                 self._show_manifest_open_error(file_path)
             else:
+                # Real error — show with Report button so the developer
+                # gets the full traceback in Discord.
                 messagebox.showerror("Error", f"Failed to paste declarations:\n{e}")
 
     def _show_manifest_open_error(self, file_path):
-        """Show a prominent, unmissable error that the manifest file is open."""
+        """Show a prominent, unmissable error that the manifest file is open
+        or otherwise locked / not writable."""
         file_name = file_path.name if hasattr(file_path, 'name') else str(file_path)
         # Use a custom Toplevel dialog so it's large, bold, and stays on top
         dlg = ctk.CTkToplevel()
-        dlg.title("CLOSE THE MANIFEST FILE")
+        dlg.title("CANNOT WRITE TO MANIFEST FILE")
         dlg.configure(fg_color="#0f1117")
-        dlg.geometry("520x280")
+        dlg.geometry("520x340")
         dlg.attributes("-topmost", True)
         sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
-        dlg.geometry(f"+{int((sw-520)/2)}+{int((sh-280)/2)}")
+        dlg.geometry(f"+{int((sw-520)/2)}+{int((sh-340)/2)}")
         dlg.transient()
         dlg.grab_set()
         # Red warning header
-        ctk.CTkLabel(dlg, text="MANIFEST FILE IS OPEN",
+        ctk.CTkLabel(dlg, text="CANNOT WRITE TO MANIFEST",
                      font=(MODERN_FONT, 20, "bold"),
                      text_color="#e74c3c").pack(pady=(24, 8))
         ctk.CTkLabel(dlg,
-                     text=f"The manifest file is currently open in Excel:\n\n"
+                     text=f"The manifest file could not be written to:\n\n"
                           f"  {file_name}\n\n"
-                          f"Please CLOSE the file in Excel and try again.\n"
-                          f"The declarations could not be pasted.",
-                     font=(MODERN_FONT, 13),
-                     text_color="#e8e8e8", justify="center").pack(pady=(0, 16))
+                          f"Possible causes:\n"
+                          f"  1. The file is OPEN in Excel — close it and try again\n"
+                          f"  2. The file is on a read-only or network folder\n"
+                          f"  3. Your user account lacks write permission\n"
+                          f"  4. Antivirus is blocking the write\n\n"
+                          f"If closing Excel doesn't help, try saving a copy\n"
+                          f"to your Desktop and pasting to that instead.",
+                     font=(MODERN_FONT, 12),
+                     text_color="#e8e8e8", justify="left").pack(pady=(0, 16))
         ctk.CTkButton(dlg, text="OK", command=dlg.destroy,
                       fg_color="#e74c3c", hover_color="#c0392b",
                       width=120, height=36, corner_radius=6,
@@ -8096,14 +8298,17 @@ class UploadWindow(SupportMixin):
             except Exception:
                 pass
             raise  # Let the caller handle the "file is open" message
-        except Exception:
+        except Exception as e:
             # Clean up temp file on error
             try:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
             except Exception:
                 pass
-            return False
+            # Re-raise so the caller's outer except can show a proper
+            # error dialog with Report button — don't swallow it as
+            # "manifest is open" which is misleading.
+            raise
 
     def _has_progress(self):
         """Check if there's any upload progress that would be lost."""
