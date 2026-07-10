@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
-  "changelog": "v1.0.2 - Minor text fix:\n- Clarified 'bug icon' wording in the What to expect section",
+  "version": "1.0.3",
+  "changelog": "Added 'Check for Updates' button inside the Report a Bug dialog — click the bug icon, then 'Check for Updates' to manually poll for new versions without relaunching. Shows an animated spinner while checking, then either 'Update Now' if a new version is available or 'You're up to date' if not. Version number now shown dynamically in the title bar. Fixed word wrapping in the changelog box. Fixed bug icon clipping by increasing window height. After applying an update and clicking 'Later', the bug icon now returns to the bug icon so you can still report issues.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Packages%20at%20Customs%20Console.pyw"
 }

@@ -531,7 +531,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 #   never lost when the code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "Packages at Customs Console"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 DEVELOPER_NAME = "Atlas Ramoon"
 
 BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
@@ -541,7 +541,48 @@ UPDATE_MANIFEST_URL = (
     "manifests/customs-console.json"
 )
 
-_DATA_BLOCK_PATTERN = r'CUSTOMS_DATA = \[.*?\n\]'
+_DATA_BLOCK_PATTERN = r'CUSTOMS_DATA\s*=\s*\['
+
+
+def _extract_braced_block(text, start_pattern, open_ch, close_ch):
+    """Find the variable assignment matching *start_pattern* and return the
+    full block from the variable name through the matching closing bracket,
+    using depth counting so brackets inside string literals don't confuse it."""
+    m = re.search(start_pattern, text)
+    if not m:
+        return None, -1, -1
+    bracket_pos = m.end() - 1
+    depth = 0
+    i = bracket_pos
+    in_str = False
+    str_ch = ""
+    while i < len(text):
+        ch = text[i]
+        if in_str:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == str_ch:
+                in_str = False
+        else:
+            if ch in ('"', "'"):
+                in_str = True
+                str_ch = ch
+            elif ch == open_ch:
+                depth += 1
+            elif ch == close_ch:
+                depth -= 1
+                if depth == 0:
+                    return text[m.start():i+1], m.start(), i + 1
+        i += 1
+    return None, -1, -1
+
+
+def _splice_block(new_text, start_pattern, open_ch, close_ch, local_block):
+    _, ns, ne = _extract_braced_block(new_text, start_pattern, open_ch, close_ch)
+    if ns == -1:
+        return new_text
+    return new_text[:ns] + local_block + new_text[ne:]
 
 
 def _version_tuple(v):
@@ -680,11 +721,11 @@ def _download_and_apply_update(new_url):
     try:
         new_text = _http_get(new_url, timeout=30)
         local_text = SCRIPT_PATH.read_text(encoding="utf-8")
-        m = re.search(_DATA_BLOCK_PATTERN, local_text, flags=re.DOTALL)
-        if m and re.search(_DATA_BLOCK_PATTERN, new_text, flags=re.DOTALL):
-            local_block = m.group(0)
-            new_text = re.sub(_DATA_BLOCK_PATTERN, lambda _: local_block,
-                              new_text, count=1, flags=re.DOTALL)
+        local_block, _, _ = _extract_braced_block(
+            local_text, _DATA_BLOCK_PATTERN, "[", "]")
+        if local_block:
+            new_text = _splice_block(
+                new_text, _DATA_BLOCK_PATTERN, "[", "]", local_block)
         tmp = SCRIPT_PATH.with_name(SCRIPT_PATH.name + ".new")
         tmp.write_text(new_text, encoding="utf-8")
         os.replace(str(tmp), str(SCRIPT_PATH))
@@ -757,13 +798,13 @@ class CustomsConsole:
         ctk.set_appearance_mode("Light")
         ctk.set_default_color_theme("blue")
         self.root = ctk.CTk()
-        self.root.title("Packages at Customs — ADD Status Log  v1.0.1")
+        self.root.title(f"Packages at Customs — ADD Status Log  v{APP_VERSION}")
         self.root.configure(fg_color=BG)
 
-        WIN_W, WIN_H = 1200, 700
+        WIN_W, WIN_H = 1200, 740
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         self.root.geometry(f"{WIN_W}x{WIN_H}+{int((sw-WIN_W)/2)}+{int((sh-WIN_H)/2)}")
-        self.root.minsize(1000, 520)
+        self.root.minsize(1000, 560)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._rows = []          # list of dicts — each row's data
@@ -2319,6 +2360,66 @@ class CustomsConsole:
             font=(MODERN_FONT, 11), text_color=MUTED,
             anchor="w", justify="left").pack(anchor="w", padx=16, pady=(0, 6))
 
+        # ---- Check for Updates bar ----
+        update_bar = ctk.CTkFrame(dlg, fg_color="transparent")
+        update_bar.pack(fill="x", padx=16, pady=(0, 6))
+
+        check_btn = ctk.CTkButton(
+            update_bar, text="Check for Updates",
+            command=lambda: None,
+            fg_color=ACCENT, hover_color=ACCENT_H,
+            width=140, height=26, corner_radius=4,
+            font=(MODERN_FONT, 10, "bold"))
+        check_btn.pack(side="left")
+
+        update_status = ctk.CTkLabel(
+            update_bar, text="",
+            font=(MODERN_FONT, 10), text_color=MUTED,
+            anchor="w")
+        update_status.pack(side="left", padx=(10, 0))
+
+        _spin = {"frame": 0, "running": False}
+
+        def _spin_step():
+            if not _spin["running"]:
+                return
+            _spin["frame"] = (_spin["frame"] + 1) % 8
+            dots = "." * ((_spin["frame"] % 4) + 1)
+            update_status.configure(text=f"Checking{dots}")
+            dlg.after(200, _spin_step)
+
+        def _do_check():
+            _spin["running"] = True
+            check_btn.configure(state="disabled", text="Checking...")
+            _spin_step()
+
+            def _worker():
+                result = _check_for_update()
+                dlg.after(0, lambda: _check_done(result))
+
+            threading.Thread(target=_worker, daemon=True).start()
+
+        def _check_done(result):
+            _spin["running"] = False
+            check_btn.configure(state="normal", text="Check for Updates")
+            if result:
+                ver = result.get("version", "?")
+                self._pending_update = result
+                update_status.configure(
+                    text=f"v{ver} available!",
+                    text_color=LIGHT)
+                check_btn.configure(
+                    text=f"Update Now — v{ver}",
+                    command=self._apply_fixes_dialog,
+                    fg_color="#b8860b", hover_color="#daa520",
+                    width=180)
+            else:
+                update_status.configure(
+                    text=f"You're up to date (v{APP_VERSION})",
+                    text_color=MUTED)
+
+        check_btn.configure(command=_do_check)
+
         # Category selector (single-select)
         cat_frame = ctk.CTkFrame(dlg, fg_color="transparent")
         cat_frame.pack(fill="x", padx=16, pady=(0, 4))
@@ -2363,7 +2464,8 @@ class CustomsConsole:
                      anchor="w").pack(anchor="w", padx=10, pady=(8, 2))
         ctk.CTkLabel(info,
             text=f"\u2022 {DEVELOPER_NAME} will review your report within 24-48 hours\n"
-                 f"\u2022 When a fix is ready, the bug icon will change to 'Apply Fixes'\n"
+                 f"\u2022 When a fix is ready, click 'Check for Updates' above\n"
+                 f"   or relaunch the console \u2014 the bug icon will show 'Apply Fixes'\n"
                  f"\u2022 {DEVELOPER_NAME} will coordinate with management if the fix\n"
                  f"   requires substantial work",
             font=(MODERN_FONT, 10), text_color=MUTED,
@@ -2525,13 +2627,14 @@ class CustomsConsole:
         ctk.CTkLabel(dlg, text=f"Fixes Available  (v{ver})",
                      font=(MODERN_FONT, 15, "bold"), text_color=LIGHT).pack(
             anchor="w", padx=16, pady=(14, 2))
-        ctk.CTkLabel(dlg, text=f"From {DEVELOPER_NAME}. Your data will be preserved.",
+        ctk.CTkLabel(dlg, text=f"From {DEVELOPER_NAME}. Click Apply Fixes to download,\n"
+                     "then choose how to restart.",
                      font=(MODERN_FONT, 11), text_color=MUTED,
                      anchor="w").pack(anchor="w", padx=16, pady=(0, 8))
 
         box = ctk.CTkTextbox(dlg, height=170, fg_color=INPUT, border_color=BORDER,
                              border_width=1, corner_radius=4, text_color=DARK,
-                             font=(MODERN_FONT, 11))
+                             font=(MODERN_FONT, 11), wrap="word")
         box.pack(fill="both", expand=True, padx=16)
         box.insert("0.0", upd.get("changelog", "(no description provided)"))
         box.configure(state="disabled")
@@ -2552,6 +2655,14 @@ class CustomsConsole:
                 threading.Thread(
                     target=lambda: _post_update_applied(old_ver, new_ver),
                     daemon=True).start()
+                # Clear the pending update so the bug icon goes back
+                # to 🐞 — the update is on disk, they just need to
+                # restart.
+                self._pending_update = None
+                try:
+                    self.root.after(0, self._refresh_support_icon)
+                except Exception:
+                    pass
                 dlg.destroy()
                 if messagebox.askyesno("Update Applied",
                     f"Updated to version {new_ver}.\n\n"
