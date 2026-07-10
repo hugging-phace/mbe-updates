@@ -128,7 +128,7 @@ A4_WIDTH = 595
 # REMOTE SUPPORT — bug reporting + self-update
 # ==============================================================================
 APP_NAME = "Split Factura by CBY (Mass Print)"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -687,6 +687,7 @@ class FacturaSplitApp:
                         variable=all_var,
                         font=(MODERN_FONT, 13, "bold"), text_color=LIGHT,
                         fg_color=ACCENT, hover_color=ACCENT_H,
+                        border_color=LIGHT,
                         checkbox_width=22, checkbox_height=22).pack(
                             anchor="w", padx=12, pady=(10, 4))
         ctk.CTkLabel(all_frame,
@@ -713,7 +714,8 @@ class FacturaSplitApp:
             cb = ctk.CTkCheckBox(content, text="Blanks (no note)",
                                  variable=var,
                                  font=(MODERN_FONT, 12), text_color=LIGHT,
-                                 fg_color=ACCENT, hover_color=ACCENT_H)
+                                 fg_color=ACCENT, hover_color=ACCENT_H,
+                                 border_color=LIGHT)
             cb.pack(anchor="w", padx=20, pady=3)
             checks["(blank)"] = var
         for val in sorted(inv_values):
@@ -724,7 +726,8 @@ class FacturaSplitApp:
             cb = ctk.CTkCheckBox(content, text=f"{display} ({count})",
                                  variable=var,
                                  font=(MODERN_FONT, 12), text_color=LIGHT,
-                                 fg_color=ACCENT, hover_color=ACCENT_H)
+                                 fg_color=ACCENT, hover_color=ACCENT_H,
+                                 border_color=LIGHT)
             cb.pack(anchor="w", padx=20, pady=3)
             checks[val] = var
 
@@ -765,7 +768,8 @@ class FacturaSplitApp:
                     text=f"{display_name}  ({size_mb:.1f} MB)",
                     variable=var,
                     font=(MODERN_FONT, 11), text_color=LIGHT,
-                    fg_color=ACCENT, hover_color=ACCENT_H)
+                    fg_color=ACCENT, hover_color=ACCENT_H,
+                    border_color=LIGHT)
                 cb.pack(anchor="w", padx=20, pady=2)
                 pdf_checks[str(pdf_path)] = var
 

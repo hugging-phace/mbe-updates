@@ -1,5 +1,5 @@
 {
-  "version": "1.0.1",
-  "changelog": "Locate the Manifest worksheet automatically when another workbook tab is active.",
+  "version": "1.0.2",
+  "changelog": "Use white checkbox borders for better visibility against the dark background.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Split%20Factura%20by%20CBY%20%28Mass%20Print%29.pyw"
 }
