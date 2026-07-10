@@ -1,5 +1,5 @@
 {
-  "version": "1.1.9",
-  "changelog": "Full test: Check for Updates button should detect this version, download it, and after restart the bug icon should stay as a bug (not Apply Fixes) because the script version now matches the manifest.",
+  "version": "2.0.0",
+  "changelog": "Major update: After restarting with Restore Progress, the app now auto-opens the window you were in (e.g. Upload Declarations) instead of just showing the launcher, so you don't think you lost everything. Version number now shown in every window's title bar. Clean version reset to 2.0.0. All previous fixes included: color-aware error dialogs with Report Issue button, Discord traceback reporting, Check for Updates button in bug dialog, session restore with 'used' flag for crash survival, word wrapping in changelog box, non-numeric declaration value protection, improved permission error messages.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }

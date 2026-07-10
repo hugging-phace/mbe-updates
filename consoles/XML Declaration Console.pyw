@@ -529,7 +529,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "1.1.9"
+APP_VERSION = "2.0.0"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -2012,6 +2012,7 @@ class SupportMixin:
             session = {
                 "written_at": datetime.datetime.now().isoformat(),
                 "used": False,
+                "active_window": self._window_name,
                 "rows": rows,
                 "decl_numbers": dict(upload_win._decl_numbers),
                 "master_decl": upload_win._master_decl,
@@ -2153,7 +2154,7 @@ class Launcher:
     def __init__(self):
         self.root = ctk.CTk()
         self.root.report_callback_exception = _tk_global_exception_handler
-        self.root.title("XML Declaration Builder")
+        self.root.title(f"XML Declaration Builder v{APP_VERSION}")
         self.root.configure(fg_color=LAUNCHER_BG)
         _register_window_name(self.root, "Launcher", {"bg": LAUNCHER_BG, "panel": LAUNCHER_PANEL, "accent": LAUNCHER_ACCENT, "accent_hover": "#1a4a7a", "text": "#e8e8e8"})
         w, h = 420, 370
@@ -2226,6 +2227,54 @@ class Launcher:
         self._tin_win = None
         self._upload_win = None
 
+        # Check if we're restarting from a session restore — if so,
+        # auto-open the window the user was in so they don't just see
+        # the launcher and think they lost everything.
+        self._check_session_restore()
+
+    def _check_session_restore(self):
+        """Check if a session-restore file exists and is unused.
+        If so, auto-open the window the user was in so they don't
+        just see the launcher and think they lost everything.
+        The actual data restore happens in UploadWindow.__init__."""
+        import tempfile, os, json, datetime
+        path = os.path.join(tempfile.gettempdir(),
+                            SupportMixin._SESSION_FILE)
+        if not os.path.exists(path):
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                session = json.load(f)
+        except Exception:
+            return
+        if session.get("used", False):
+            return
+        # Check it's not stale (> 24 hours)
+        try:
+            written = datetime.datetime.fromisoformat(session["written_at"])
+            age = (datetime.datetime.now() - written).total_seconds()
+            if age > SupportMixin._SESSION_EXPIRY_SECONDS:
+                return
+        except Exception:
+            return
+        # Auto-open the window the user was in
+        active = session.get("active_window", "")
+        self.root.after(500, lambda: self._auto_open_window(active))
+
+    def _auto_open_window(self, window_name):
+        """Open the window that was active before the restart."""
+        if "Upload" in window_name:
+            self._open_upload()
+        elif "Ocean" in window_name or "Air" in window_name:
+            # We don't know which mode — default to ocean.  The console
+            # window doesn't have session restore, so this is just a
+            # convenience to get them back to roughly where they were.
+            self._open("ocean")
+        elif "TIN" in window_name:
+            self._open_tin()
+        elif "Codes" in window_name or "Item" in window_name:
+            self._open_codes()
+
     def _open_tin(self):
         if self._tin_win is not None:
             try:
@@ -2290,7 +2339,7 @@ class ConsoleWindow(SupportMixin):
         self._set_support_palette(c)
 
         self.win = ctk.CTkToplevel(launcher.root)
-        self.win.title(cfg["title"])
+        self.win.title(f"{cfg['title']} v{APP_VERSION}")
         self.win.configure(fg_color=c["bg"])
         _register_window_name(self.win, self._window_name, c)
         WIN_W, WIN_H = 1290, 760
@@ -3673,7 +3722,7 @@ class CodesWindow(SupportMixin):
         })
 
         self.win = ctk.CTkToplevel()
-        self.win.title("Commodity Codes Management")
+        self.win.title(f"Commodity Codes Management v{APP_VERSION}")
         self.win.configure(fg_color="#0f1117")
         _register_window_name(self.win, self._window_name, {"bg": "#0f1117", "panel": "#141a2a", "accent": "#0f3460", "accent_hover": "#1a4a7a", "text": "#c8d6e5"})
         self.win.geometry("900x600")
@@ -4416,7 +4465,7 @@ class TINWindow(SupportMixin):
         })
 
         self.win = ctk.CTkToplevel()
-        self.win.title("TIN Numbers Management")
+        self.win.title(f"TIN Numbers Management v{APP_VERSION}")
         self.win.configure(fg_color="#0f1117")
         _register_window_name(self.win, self._window_name, {"bg": "#0f1117", "panel": "#141a2a", "accent": "#0f3460", "accent_hover": "#1a4a7a", "text": "#c8d6e5"})
         self.win.geometry("960x600")
@@ -5680,7 +5729,7 @@ class UploadWindow(SupportMixin):
         })
 
         self.win = ctk.CTkToplevel()
-        self.win.title("Upload Declarations to COLS")
+        self.win.title(f"Upload Declarations to COLS v{APP_VERSION}")
         self.win.configure(fg_color="#0f0f1a")
         _register_window_name(self.win, self._window_name, {"bg": "#0f0f1a", "panel": "#1a1520", "accent": "#6c3483", "accent_hover": "#8e44ad", "text": "#e8e8e8"})
         w, h = 820, 610
