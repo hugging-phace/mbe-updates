@@ -529,7 +529,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -7916,21 +7916,44 @@ class UploadWindow(SupportMixin):
                 master_decl = decl_num
 
         if not cby_to_decl and not master_decl:
-            messagebox.showwarning("No Matches",
+            # Build a diagnostic dump of exactly what WAS captured so the
+            # user can hit 'Report Issue' and the developer sees the guts
+            # of why nothing matched — no guessing over the phone.
+            diag = "Captured declaration numbers (filename -> decl#):\n"
+            if self._decl_numbers:
+                for fn, dn in self._decl_numbers.items():
+                    diag += f"  {fn!r} -> {dn!r}\n"
+            else:
+                diag += "  (none)\n"
+            diag += f"\nCBY regex used: CBY\\s*(\\d+)  (case-insensitive)\n"
+            diag += f"Master patterns: 'HBL-Master' or 'MBL' in filename\n"
+            diag += f"cby_to_decl result: {cby_to_decl}\n"
+            diag += f"master_decl result: {master_decl!r}"
+            _show_error_with_report("No Matches",
                 "No declaration numbers with matching CBY numbers found.\n\n"
                 "The uploaded files don't have CBY numbers in their names,\n"
                 "or no house declarations were captured.\n\n"
                 "Make sure the house XML files (HBL-CBY*.xml) were uploaded\n"
-                "and their declaration numbers appear in the Declaration # column.")
+                "and their declaration numbers appear in the Declaration # column.",
+                traceback_text=diag,
+                window_name=self._window_name)
             return
         if not cby_to_decl and master_decl:
-            messagebox.showwarning("No House Declarations",
+            diag = "Captured declaration numbers (filename -> decl#):\n"
+            for fn, dn in self._decl_numbers.items():
+                diag += f"  {fn!r} -> {dn!r}\n"
+            diag += f"\nCBY regex used: CBY\\s*(\\d+)  (case-insensitive)\n"
+            diag += f"cby_to_decl result: {cby_to_decl}\n"
+            diag += f"master_decl result: {master_decl!r}"
+            _show_error_with_report("No House Declarations",
                 "Only a Master declaration was found — no House/CBY declarations.\n\n"
                 "The Paste to Manifest feature needs house declaration numbers\n"
                 "(from HBL-CBY*.xml files) to match against CBY rows in the manifest.\n\n"
                 "Make sure the house XML files were uploaded and their declaration\n"
                 "numbers appear in the Declaration # column.\n\n"
-                f"Master declaration found: {master_decl}")
+                f"Master declaration found: {master_decl}",
+                traceback_text=diag,
+                window_name=self._window_name)
             return
 
         try:

@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
-  "changelog": "Error dialogs now match the color scheme of whichever window they appear in (Ocean green, Air purple, etc.) and include a right-click Copy/Select All menu. Real errors (inside except blocks) show a 'Report Issue' button that sends the full traceback to Discord; validation messages (like 'enter AWB first') do not. Paste to Manifest now auto-runs Copy from COLS first if needed, guards against non-numeric declaration values instead of crashing, and gives clearer permission error messages. Window heights increased to prevent the bug icon from being clipped.",
+  "version": "1.0.3",
+  "changelog": "The 'No Matches' and 'No House Declarations' warnings in Paste to Manifest are now reportable: they include a Report Issue button and a Show Details section listing exactly which filenames and declaration numbers were captured, so the developer can see why matching failed without a screen-share.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }
