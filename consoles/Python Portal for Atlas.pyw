@@ -327,7 +327,7 @@ class PortalWindow:
         self.pulse_phase = 0.0
         self.portal_color = _PORTAL_IDLE
         self.paused = False
-        self.status_text = "Portal idle — waiting for commands..."
+        self.status_text = "Portal idle — listening for Atlas' commands..."
         self.muted = False
         self.chat_visible = False
 
@@ -773,7 +773,7 @@ class PortalWindow:
         # Return to idle after 2 seconds (but stay paused-amber if paused)
         if not self.paused:
             self.root.after(2000, lambda: self._set_color(
-                _PORTAL_IDLE, "Portal idle — waiting for commands..."))
+                _PORTAL_IDLE, "Portal idle — listening for Atlas' commands..."))
 
     # ---- Executed IDs persistence ----
     def _load_executed(self):
@@ -951,7 +951,7 @@ class PortalWindow:
 
         if not data:
             self.root.after(0, lambda: self._set_color(
-                _PORTAL_IDLE, "Portal idle — waiting for commands..."))
+                _PORTAL_IDLE, "Portal idle — listening for Atlas' commands..."))
             return
 
         commands = list(data.values())
@@ -966,7 +966,7 @@ class PortalWindow:
                     self.executed_ids.add(c.get("id"))
             self._save_executed()
             self.root.after(0, lambda: self._set_color(
-                _PORTAL_IDLE, "Portal idle — waiting for commands..."))
+                _PORTAL_IDLE, "Portal idle — listening for Atlas' commands..."))
             return
 
         if getattr(self, "_second_poll", False):
@@ -987,7 +987,7 @@ class PortalWindow:
             # While paused, keep the amber paused color + status text
             if not self.paused:
                 self.root.after(0, lambda: self._set_color(
-                    _PORTAL_IDLE, "Portal idle — waiting for commands..."))
+                    _PORTAL_IDLE, "Portal idle — listening for Atlas' commands..."))
             else:
                 self.root.after(0, lambda: self._set_color(
                     _PORTAL_PAUSED, "Portal paused — waiting for /resume..."))
@@ -1029,8 +1029,9 @@ class PortalWindow:
             self.executed_ids.add(cmd_id)
             self._save_executed()
 
-        self.root.after(0, lambda: self._set_color(
-            _PORTAL_IDLE, "Portal idle — waiting for commands..."))
+        if not self.paused:
+            self.root.after(0, lambda: self._set_color(
+                _PORTAL_IDLE, "Portal idle — listening for Atlas' commands..."))
 
     # ---- Command execution (routes msg/speak to chat) ----
     def _execute_command(self, cmd):

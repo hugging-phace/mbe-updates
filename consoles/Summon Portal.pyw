@@ -7,8 +7,8 @@ Python Portal for Atlas from GitHub before opening it.
 
 Peace of mind:
   - Atlas cannot see your screen or control your mouse.
-  - He can only read files you choose to share, run scripts you send,
-    and send short text messages back.
+  - He can only carry out file-level tasks such as reading nearby files,
+    adding or replacing files, and running Python scripts you send.
 """
 
 import os
@@ -36,8 +36,9 @@ def main():
         "diagnose and fix issues on your machine from afar.\n\n"
         "Peace of mind:\n"
         "Atlas cannot see your screen or control your mouse.\n"
-        "He can only read files you choose to share, run scripts\n"
-        "you send, and send short text messages back.\n\n"
+        "He can only carry out file-level tasks such as reading\n"
+        "nearby files, adding or replacing files, and running\n"
+        "Python scripts you send.\n\n"
         "You'll choose where the problem is, then a small portal\n"
         "file will be saved there for you to open.\n\n"
         "Continue?")
