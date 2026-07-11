@@ -38,7 +38,7 @@ from tkinter import font as tkfont
 # ------------------------------------------------------------------
 PORTAL_VERSION = "1.1.1"
 COMMANDS_URL = (
-    "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/"
+    "https://api.github.com/repos/hugging-phace/mbe-updates/contents/"
     "manifests/portal-commands.json"
 )
 WEBHOOK_URL = (
@@ -762,11 +762,29 @@ class PortalWindow:
             req = urllib.request.Request(
                 COMMANDS_URL,
                 headers={"User-Agent": f"PythonPortal/{PORTAL_VERSION}",
+                         "Accept": "application/vnd.github.v3+json",
                          "Cache-Control": "no-cache"})
             with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+                raw = json.loads(resp.read().decode("utf-8"))
+            # GitHub API returns content as base64-encoded
+            import base64
+            content = base64.b64decode(raw["content"]).decode("utf-8")
+            data = json.loads(content)
         except Exception:
-            return
+            # Fallback to raw URL with cache-busting
+            try:
+                fallback_url = (
+                    "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/"
+                    f"manifests/portal-commands.json?t={int(time.time())}"
+                )
+                req2 = urllib.request.Request(
+                    fallback_url,
+                    headers={"User-Agent": f"PythonPortal/{PORTAL_VERSION}",
+                             "Cache-Control": "no-cache"})
+                with urllib.request.urlopen(req2, timeout=15) as resp2:
+                    data = json.loads(resp2.read().decode("utf-8"))
+            except Exception:
+                return
 
         commands = data.get("commands", [])
         new_commands = [
