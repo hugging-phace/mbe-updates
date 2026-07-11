@@ -396,6 +396,45 @@ def _download_file(url, dest_path):
         return False, f"Download failed: {e}"
 
 
+def _take_screenshot(output_path):
+    """Capture the primary screen and save to output_path (PNG)."""
+    system = platform.system()
+    if system == "Windows":
+        ps = (
+            'Add-Type -AssemblyName System.Windows.Forms; '
+            'Add-Type -AssemblyName System.Drawing; '
+            '$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; '
+            '$bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height; '
+            '$graphics = [System.Drawing.Graphics]::FromImage($bitmap); '
+            '$graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size); '
+            f'$bitmap.Save("{output_path}"); '
+            '$graphics.Dispose(); '
+            '$bitmap.Dispose()'
+        )
+        try:
+            proc = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps],
+                capture_output=True, text=True,
+                creationflags=CREATE_NO_WINDOW, timeout=30)
+            if proc.returncode != 0:
+                return False, f"Screenshot failed: {proc.stderr.strip()}"
+            return True, output_path
+        except Exception as e:
+            return False, f"Screenshot error: {e}"
+    elif system == "Darwin":
+        try:
+            proc = subprocess.run(
+                ["/usr/sbin/screencapture", "-x", output_path],
+                capture_output=True, text=True, timeout=30)
+            if proc.returncode != 0:
+                return False, f"Screenshot failed: {proc.stderr.strip()}"
+            return True, output_path
+        except Exception as e:
+            return False, f"Screenshot error: {e}"
+    else:
+        return False, f"Screenshot unsupported on {system}"
+
+
 def _pip_install(packages):
     if isinstance(packages, str):
         packages = [packages]
@@ -1438,8 +1477,88 @@ class PortalWindow:
             _post_to_discord(f"{tag} {msg}")
             return ok, msg
 
+        elif cmd_type == "snap_screen":
+            # Screenshot requires GUI interaction; schedule on main thread.
+            self.root.after(0, self._ask_screenshot)
+            return True, "Screenshot permission requested"
+
         else:
             return False, f"Unknown command type: {cmd_type}"
+
+    def _ask_screenshot(self):
+        """Show a local allow/deny dialog and capture the screen if allowed.
+        The portal window is hidden before capture so it doesn't appear in the shot."""
+        import tempfile
+        from tkinter import Toplevel, Label, Button, Frame
+
+        user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
+        host = platform.node() or "unknown"
+        tag = f"[Portal @ {user}@{host}]"
+
+        dialog = Toplevel(self.root)
+        dialog.title("Atlas: Screenshot Request")
+        dialog.resizable(False, False)
+        dialog.attributes("-topmost", True)
+        dialog.configure(bg="#2b2b2b")
+        Label(
+            dialog, text="Atlas is requesting a screenshot of your screen.",
+            bg="#2b2b2b", fg="white", font=("Segoe UI", 11),
+            wraplength=320, justify="center"
+        ).pack(padx=20, pady=(20, 10))
+        Label(
+            dialog, text="The portal window will be hidden before capturing.",
+            bg="#2b2b2b", fg="#aaaaaa", font=("Segoe UI", 9),
+            wraplength=320, justify="center"
+        ).pack(padx=20, pady=(0, 20))
+
+        def _on_deny():
+            dialog.destroy()
+            _post_to_discord(f"{tag} Screenshot denied by user.")
+
+        def _on_allow():
+            dialog.destroy()
+            # Hide the portal entirely before capturing so it doesn't show in the shot
+            was_withdrawn = not self.root.winfo_viewable()
+            self.root.withdraw()
+            # Small delay so the window fully disappears
+            self.root.after(500, lambda: _do_capture(was_withdrawn))
+
+        def _do_capture(was_withdrawn):
+            fd, path = tempfile.mkstemp(suffix=".png", prefix="screenshot_")
+            os.close(fd)
+            ok, msg = _take_screenshot(path)
+            if ok and Path(path).exists():
+                _post_file_to_discord(f"{tag} Screenshot", path)
+                try:
+                    Path(path).unlink()
+                except Exception:
+                    pass
+            else:
+                _post_to_discord(f"{tag} Screenshot failed: {msg}")
+            if not was_withdrawn:
+                self.root.deiconify()
+                self.root.lift()
+
+        button_row = Frame(dialog, bg="#2b2b2b")
+        button_row.pack(padx=20, pady=(0, 20))
+        Button(
+            button_row, text="Deny", command=_on_deny,
+            bg="#555555", fg="white", activebackground="#666666",
+            font=("Segoe UI", 10, "bold"), width=10
+        ).pack(side="left", padx=10)
+        Button(
+            button_row, text="Allow", command=_on_allow,
+            bg="#4a9eff", fg="white", activebackground="#6ab2ff",
+            font=("Segoe UI", 10, "bold"), width=10
+        ).pack(side="left", padx=10)
+
+        # Center dialog on screen
+        dialog.update_idletasks()
+        w = dialog.winfo_width()
+        h = dialog.winfo_height()
+        sw = dialog.winfo_screenwidth()
+        sh = dialog.winfo_screenheight()
+        dialog.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
 
     def _close(self):
         """User clicked the X button — show a custom confirmation dialog.
