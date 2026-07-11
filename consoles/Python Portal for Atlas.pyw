@@ -1306,21 +1306,66 @@ class PortalWindow:
             return False, f"Unknown command type: {cmd_type}"
 
     def _close(self):
-        """User clicked the X button — ask for confirmation first."""
-        from tkinter import messagebox
-        try:
-            result = messagebox.askyesno(
-                "Close Portal?",
-                "Are you sure you want to close the portal?\n\n"
-                "Atlas will be alerted and can reopen it if needed.",
-                icon="question")
-        except Exception:
-            result = messagebox.askyesno(
-                "Close Portal?",
-                "Are you sure you want to close the portal?\n\n"
-                "Atlas will be alerted and can reopen it if needed.")
+        """User clicked the X button — show a custom confirmation dialog
+        positioned near the portal window."""
+        result = self._ask_yes_no(
+            "Close Portal?",
+            "Are you sure you want to close the portal?\n\n"
+            "Atlas will only have a limited time to restore the session.")
         if result:
             self._user_close()
+
+    def _ask_yes_no(self, title, message):
+        """Custom modal yes/no dialog centered over the portal window."""
+        from tkinter import Toplevel, Label, Button, Frame
+        dialog = Toplevel(self.root)
+        dialog.title(title)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        dialog.configure(bg=_BG)
+
+        # Size
+        dialog.update_idletasks()
+        width, height = 360, 160
+
+        # Position centered over the portal window
+        root_x = self.root.winfo_x()
+        root_y = self.root.winfo_y()
+        root_w = self.root.winfo_width()
+        root_h = self.root.winfo_height()
+        x = root_x + (root_w - width) // 2
+        y = root_y + (root_h - height) // 2
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+
+        # Content
+        Label(dialog, text=title, font=("Segoe UI", 11, "bold"),
+              bg=_BG, fg=_TEXT).pack(pady=(16, 8), padx=16)
+        Label(dialog, text=message, font=("Segoe UI", 9),
+              bg=_BG, fg=_TEXT, justify="center").pack(padx=16)
+
+        result = {"value": False}
+
+        def yes():
+            result["value"] = True
+            dialog.destroy()
+
+        def no():
+            result["value"] = False
+            dialog.destroy()
+
+        btn_frame = Frame(dialog, bg=_BG)
+        btn_frame.pack(pady=(16, 12))
+        Button(btn_frame, text="Yes", command=yes, width=10,
+               bg=_PORTAL_IDLE, fg=_TEXT, activebackground="#b07bc8",
+               relief="flat", cursor="hand2").pack(side="left", padx=6)
+        Button(btn_frame, text="No", command=no, width=10,
+               bg=_PANEL, fg=_TEXT, activebackground="#2a2a45",
+               relief="flat", cursor="hand2").pack(side="left", padx=6)
+
+        # Center dialog over root and wait
+        self.root.wait_window(dialog)
+        return result["value"]
 
     def _user_close(self):
         """User closed the portal: hide window and keep polling in background."""
