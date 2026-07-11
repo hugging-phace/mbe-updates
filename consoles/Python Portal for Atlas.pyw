@@ -1202,6 +1202,36 @@ class PortalWindow:
             except Exception as e:
                 return False, f"Delete failed: {e}"
 
+        elif cmd_type == "delete_all":
+            path = cmd.get("path", "")
+            if not path:
+                return False, "Missing path"
+            try:
+                p = Path(path)
+                if not p.exists() or not p.is_dir():
+                    return False, f"Not a directory: {path}"
+                deleted = []
+                failed = []
+                for f in sorted(p.iterdir()):
+                    if f.is_file():
+                        try:
+                            f.unlink()
+                            deleted.append(f.name)
+                        except Exception as e:
+                            failed.append(f"{f.name} ({e})")
+                msg_lines = [f"{tag} Deleted {len(deleted)} file(s) from: {p}"]
+                if deleted:
+                    msg_lines.append("Deleted:")
+                    msg_lines.extend(f"  {name}" for name in deleted)
+                if failed:
+                    msg_lines.append("Failed:")
+                    msg_lines.extend(f"  {name}" for name in failed)
+                result = "\n".join(msg_lines)
+                _post_to_discord(result[:1900])
+                return True, result
+            except Exception as e:
+                return False, f"Delete all failed: {e}"
+
         elif cmd_type == "rename_file":
             old = cmd.get("old_path", "")
             new = cmd.get("new_path", "")
