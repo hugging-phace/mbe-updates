@@ -318,14 +318,15 @@ def _simple_list_files(path):
 # Portal UI — pulsing circle + chat sidebar
 # ------------------------------------------------------------------
 class PortalWindow:
-    def __init__(self, root, portal_folder=None):
+    def __init__(self, root, portal_folder=None, color_override=None):
         self.root = root
         self.portal_folder = portal_folder
         self.portal_dir = Path(__file__).parent
         self.executed_file = self.portal_dir / ".portal_executed.json"
         self.executed_ids = self._load_executed()
         self.pulse_phase = 0.0
-        self.portal_color = _PORTAL_IDLE
+        self.idle_color = color_override or _PORTAL_IDLE
+        self.portal_color = self.idle_color
         self.paused = False
         self.status_text = "Portal idle — listening for Atlas' commands..."
         self.muted = False
@@ -773,7 +774,7 @@ class PortalWindow:
         # Return to idle after 2 seconds (but stay paused-amber if paused)
         if not self.paused:
             self.root.after(2000, lambda: self._set_color(
-                _PORTAL_IDLE, "Portal idle — listening for Atlas' commands..."))
+                self.idle_color, "Portal idle — listening for Atlas' commands..."))
 
     # ---- Executed IDs persistence ----
     def _load_executed(self):
@@ -951,7 +952,7 @@ class PortalWindow:
 
         if not data:
             self.root.after(0, lambda: self._set_color(
-                _PORTAL_IDLE, "Portal idle — listening for Atlas' commands..."))
+                self.idle_color, "Portal idle — listening for Atlas' commands..."))
             return
 
         commands = list(data.values())
@@ -966,7 +967,7 @@ class PortalWindow:
                     self.executed_ids.add(c.get("id"))
             self._save_executed()
             self.root.after(0, lambda: self._set_color(
-                _PORTAL_IDLE, "Portal idle — listening for Atlas' commands..."))
+                self.idle_color, "Portal idle — listening for Atlas' commands..."))
             return
 
         if getattr(self, "_second_poll", False):
@@ -987,7 +988,7 @@ class PortalWindow:
             # While paused, keep the amber paused color + status text
             if not self.paused:
                 self.root.after(0, lambda: self._set_color(
-                    _PORTAL_IDLE, "Portal idle — listening for Atlas' commands..."))
+                    self.idle_color, "Portal idle — listening for Atlas' commands..."))
             else:
                 self.root.after(0, lambda: self._set_color(
                     _PORTAL_PAUSED, "Portal paused — waiting for Atlas to resume..."))
@@ -1001,7 +1002,7 @@ class PortalWindow:
                     self.executed_ids.add(cmd.get("id"))
                     self._save_executed()
                     self.root.after(0, lambda: self._set_color(
-                        _PORTAL_IDLE, "Portal resumed — waiting for commands..."))
+                        self.idle_color, "Portal resumed — listening for Atlas' commands..."))
                     _post_to_discord(f"[Portal] Resumed by Atlas")
                     return
                 # Mark other commands as executed so they don't pile up
@@ -1036,7 +1037,7 @@ class PortalWindow:
 
         if not self.paused:
             self.root.after(0, lambda: self._set_color(
-                _PORTAL_IDLE, "Portal idle — listening for Atlas' commands..."))
+                self.idle_color, "Portal idle — listening for Atlas' commands..."))
 
     # ---- Command execution (routes msg/speak to chat) ----
     def _execute_command(self, cmd):
@@ -1182,15 +1183,44 @@ class PortalWindow:
             if not path or not Path(path).exists():
                 return False, f"Script not found: {path}"
             try:
+                # Use unbuffered output + force stderr to merge with stdout
                 proc = subprocess.run(
-                    [sys.executable, path],
+                    [sys.executable, "-u", path],
                     capture_output=True, text=True, timeout=120,
-                    creationflags=CREATE_NO_WINDOW)
+                    creationflags=CREATE_NO_WINDOW,
+                    env={**os.environ, "PYTHONUNBUFFERED": "1"})
                 output = proc.stdout + proc.stderr
+                if not output.strip():
+                    output = "(Script produced no output — it may be a GUI app that ran successfully)"
                 _post_file_to_discord(f"{tag} Output of {path}", _write_temp(output))
                 return proc.returncode == 0, output
+            except subprocess.TimeoutExpired:
+                return False, f"Script timed out after 120 seconds"
             except Exception as e:
                 return False, f"Script error: {e}"
+
+        elif cmd_type == "terminal":
+            command = cmd.get("command", "")
+            if not command:
+                return False, "Missing command"
+            try:
+                is_mac = platform.system() == "Darwin"
+                if is_mac:
+                    proc = subprocess.run(
+                        command, shell=True, capture_output=True,
+                        text=True, timeout=60)
+                else:
+                    proc = subprocess.run(
+                        command, shell=True, capture_output=True,
+                        text=True, timeout=60,
+                        creationflags=CREATE_NO_WINDOW)
+                output = f"$ {command}\n\n--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}\n--- exit code: {proc.returncode} ---"
+                _post_file_to_discord(f"{tag} Terminal: {command}", _write_temp(output))
+                return proc.returncode == 0, output
+            except subprocess.TimeoutExpired:
+                return False, f"Command timed out after 60 seconds"
+            except Exception as e:
+                return False, f"Terminal error: {e}"
 
         elif cmd_type == "close_portal":
             # Atlas remotely closes the portal — no confirmation needed
@@ -1247,6 +1277,11 @@ class PortalWindow:
 
 if __name__ == "__main__":
     PORTAL_FOLDER = str(Path(__file__).parent)
+    # Allow color override via command-line: --color=#a0c4ff
+    portal_color_override = None
+    for arg in sys.argv[1:]:
+        if arg.startswith("--color="):
+            portal_color_override = arg.split("=", 1)[1]
     try:
         user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
         host = platform.node() or "unknown"
@@ -1260,5 +1295,6 @@ if __name__ == "__main__":
         pass
 
     root = tk.Tk()
-    PortalWindow(root, portal_folder=PORTAL_FOLDER)
+    PortalWindow(root, portal_folder=PORTAL_FOLDER,
+                 color_override=portal_color_override)
     root.mainloop()
