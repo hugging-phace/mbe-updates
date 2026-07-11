@@ -49,6 +49,21 @@ SMTP_PORT = 587
 KEYRING_SERVICE_NAME = "MBE_Automation_CBY"
 SENDER_EMAIL = "cby@mbe.ky"
 
+# Common typos fixed by the Polish Message button (pure Python, instant)
+COMMON_TYPOS = {
+    'recieved': 'received', 'recieve': 'receive', 'seperate': 'separate',
+    'occured': 'occurred', 'untill': 'until', 'wich': 'which',
+    'thier': 'their', 'realy': 'really', 'alot': 'a lot',
+    'cant': "can't", 'dont': "don't", 'wont': "won't",
+    'doesnt': "doesn't", 'didnt': "didn't", 'isnt': "isn't",
+    'wasnt': "wasn't", 'havent': "haven't", 'hasnt': "hasn't",
+    'wouldnt': "wouldn't", 'couldnt': "couldn't", 'shouldnt': "shouldn't",
+    'im': "I'm", 'ive': "I've", 'ill': "I'll", 'id': "I'd",
+    'pls': 'please', 'plz': 'please', 'asap': 'ASAP',
+    'thru': 'through', 'tho': 'though', 'u': 'you', 'ur': 'your',
+    'adress': 'address', 'aprox': 'approximately',
+}
+
 HELPFUL_LINKS_PRESETS = {
     "--- Select a Preset Link (Optional) ---": {"receiver_text": "", "url": ""},
     "How To Retrieve Amazon Invoice": {
@@ -779,16 +794,23 @@ def process_queue():
 
         def make_call():
             try:
-                from textblob import TextBlob
-                # TextBlob spell correction + basic capitalization
-                blob = TextBlob(current_text)
-                polished = str(blob.correct())
-                # Capitalize first letter of each sentence
-                sentences = polished.split('. ')
-                polished = '. '.join(s[0].upper() + s[1:] if s else s for s in sentences)
-                polished = polished.strip()
+                text = current_text.strip()
+                # Fix common typos (word-boundary, case-insensitive)
+                for wrong, right in COMMON_TYPOS.items():
+                    text = re.sub(r'\b' + re.escape(wrong) + r'\b', right, text, flags=re.IGNORECASE)
+                # Capitalize standalone 'i'
+                text = re.sub(r'\bi\b', 'I', text)
+                # Capitalize first letter
+                if text:
+                    text = text[0].upper() + text[1:]
+                # Capitalize after sentence endings
+                text = re.sub(r'([.!?]\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text)
+                # Add period at end if missing
+                if text and text[-1] not in '.!?':
+                    text += '.'
+                polished = text.strip()
                 if not polished:
-                    raise Exception("Empty result from TextBlob")
+                    raise Exception("Empty result")
                 root.after(0, lambda p=polished: start_text_fade(lambda: update_reason(p)))
             except Exception as e:
                 err = str(e)
