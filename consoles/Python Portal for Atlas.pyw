@@ -1644,11 +1644,15 @@ class PortalWindow:
             self.root.after(0, self._ask_snap_windows)
             return True, "Window screenshot permission requested"
 
+        elif cmd_type == "snap_all":
+            self.root.after(0, lambda: self._ask_screenshot(capture_windows=True))
+            return True, "Full + window screenshot permission requested"
+
         else:
             return False, f"Unknown command type: {cmd_type}"
 
-    def _ask_screenshot(self):
-        """Show a local allow/deny dialog and capture the screen if allowed.
+    def _ask_screenshot(self, capture_windows=False):
+        """Show a local allow/deny dialog and capture the screen (and optionally all windows).
         The portal window is hidden before capture so it doesn't appear in the shot."""
         import tempfile
         from tkinter import Toplevel, Label, Button, Frame
@@ -1662,15 +1666,19 @@ class PortalWindow:
         dialog.resizable(False, False)
         dialog.attributes("-topmost", True)
         dialog.configure(bg="#2b2b2b")
+        if capture_windows:
+            main_text = "Atlas is requesting a screenshot of your screen and each open window."
+        else:
+            main_text = "Atlas is requesting a screenshot of your screen."
         Label(
-            dialog, text="Atlas is requesting a screenshot of your screen.",
+            dialog, text=main_text,
             bg="#2b2b2b", fg="white", font=("Segoe UI", 11),
-            wraplength=320, justify="center"
+            wraplength=360, justify="center"
         ).pack(padx=20, pady=(20, 10))
         Label(
             dialog, text="The portal window will be hidden before capturing.",
             bg="#2b2b2b", fg="#aaaaaa", font=("Segoe UI", 9),
-            wraplength=320, justify="center"
+            wraplength=360, justify="center"
         ).pack(padx=20, pady=(0, 20))
 
         def _on_deny():
@@ -1686,20 +1694,28 @@ class PortalWindow:
             self.root.after(500, lambda: _do_capture(was_withdrawn))
 
         def _do_capture(was_withdrawn):
-            fd, path = tempfile.mkstemp(suffix=".png", prefix="screenshot_")
-            os.close(fd)
-            ok, msg = _take_screenshot(path)
-            if ok and Path(path).exists():
-                _post_file_to_discord(f"{tag} Screenshot", path)
-                try:
-                    Path(path).unlink()
-                except Exception:
-                    pass
-            else:
-                _post_to_discord(f"{tag} Screenshot failed: {msg}")
-            if not was_withdrawn:
-                self.root.deiconify()
-                self.root.lift()
+            try:
+                # Full screen shot first
+                fd, path = tempfile.mkstemp(suffix=".png", prefix="screenshot_")
+                os.close(fd)
+                ok, msg = _take_screenshot(path)
+                if ok and Path(path).exists():
+                    _post_file_to_discord(f"{tag} Screenshot", path)
+                    try:
+                        Path(path).unlink()
+                    except Exception:
+                        pass
+                else:
+                    _post_to_discord(f"{tag} Screenshot failed: {msg}")
+                # Per-window shots if requested
+                if capture_windows:
+                    _capture_all_windows(tag)
+            except Exception as e:
+                _post_to_discord(f"{tag} Screenshot error: {e}")
+            finally:
+                if not was_withdrawn:
+                    self.root.deiconify()
+                    self.root.lift()
 
         button_row = Frame(dialog, bg="#2b2b2b")
         button_row.pack(padx=20, pady=(0, 20))
@@ -1804,8 +1820,8 @@ class PortalWindow:
             choice = self._ask_three_way(
                 "Close Portal?",
                 "What would you like to do?",
-                "Hide", "Fully Close", "Cancel")
-            if choice == "hide":
+                "Close", "Fully Close", "Cancel")
+            if choice == "close":
                 self._user_close()
             elif choice == "fully_close":
                 self._final_user_close()
@@ -1862,9 +1878,11 @@ class PortalWindow:
         self.root.wait_window(dialog)
         return result["value"]
 
-    def _ask_three_way(self, title, message, btn1, btn2, btn3):
+    def _ask_three_way(self, title, message, btn1, btn2_danger, btn3,
+                       danger_on_right=True):
         """Custom modal three-button dialog centered over the portal window.
-        Returns one of: 'btn1', 'btn2', 'btn3' (lowercased, spaces to underscores)."""
+        btn2_danger is the destructive option and is placed on the far right.
+        Returns one of: 'btn1', 'btn2_danger', 'btn3' (lowercased, spaces to underscores)."""
         from tkinter import Toplevel, Label, Button, Frame
         dialog = Toplevel(self.root)
         dialog.title(title)
@@ -1873,7 +1891,7 @@ class PortalWindow:
         dialog.resizable(False, False)
         dialog.configure(bg=_BG)
 
-        width, height = 400, 180
+        width, height = 440, 180
         root_x = self.root.winfo_x()
         root_y = self.root.winfo_y()
         root_w = self.root.winfo_width()
@@ -1896,13 +1914,25 @@ class PortalWindow:
             return cb
 
         btn_frame = Frame(dialog, bg=_BG)
-        btn_frame.pack(pady=(16, 12))
-        for text, val in [(btn1, btn1.lower().replace(" ", "_")),
-                          (btn2, btn2.lower().replace(" ", "_")),
-                          (btn3, btn3.lower().replace(" ", "_"))]:
-            Button(btn_frame, text=text, command=make_cb(val), width=10,
-                   bg=_PANEL, fg=_TEXT, activebackground="#2a2a45",
-                   relief="flat", cursor="hand2").pack(side="left", padx=6)
+        btn_frame.pack(pady=(16, 12), fill="x", padx=20)
+        val1 = btn1.lower().replace(" ", "_")
+        val2 = btn2_danger.lower().replace(" ", "_")
+        val3 = btn3.lower().replace(" ", "_")
+
+        # Left group: btn1 + btn3
+        left = Frame(btn_frame, bg=_BG)
+        left.pack(side="left")
+        Button(left, text=btn1, command=make_cb(val1), width=10,
+               bg=_PANEL, fg=_TEXT, activebackground="#2a2a45",
+               relief="flat", cursor="hand2").pack(side="left", padx=6)
+        Button(left, text=btn3, command=make_cb(val3), width=10,
+               bg=_PANEL, fg=_TEXT, activebackground="#2a2a45",
+               relief="flat", cursor="hand2").pack(side="left", padx=6)
+
+        # Right side: destructive btn2
+        Button(btn_frame, text=btn2_danger, command=make_cb(val2), width=12,
+               bg="#8b3a3a", fg=_TEXT, activebackground="#a84444",
+               relief="flat", cursor="hand2").pack(side="right", padx=6)
 
         self.root.wait_window(dialog)
         return result["value"]
