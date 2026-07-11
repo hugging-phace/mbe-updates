@@ -128,7 +128,7 @@ A4_WIDTH = 595
 # REMOTE SUPPORT — bug reporting + self-update
 # ==============================================================================
 APP_NAME = "Factura Splitter Console"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 

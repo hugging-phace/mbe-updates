@@ -1,5 +1,5 @@
 {
-  "version": "1.0.3",
-  "changelog": "Portal summon now uses cache-busting so it always downloads the latest portal.",
+  "version": "1.0.4",
+  "changelog": "Portal icon now matches summoned orb color (pale blue).",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Factura%20Splitter%20Console.pyw"
 }
