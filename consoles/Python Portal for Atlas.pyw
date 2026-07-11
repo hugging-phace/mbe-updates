@@ -36,7 +36,7 @@ from tkinter import font as tkfont
 # ------------------------------------------------------------------
 # Config
 # ------------------------------------------------------------------
-PORTAL_VERSION = "1.1.0"
+PORTAL_VERSION = "1.1.1"
 COMMANDS_URL = (
     "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/"
     "manifests/portal-commands.json"
@@ -46,6 +46,7 @@ WEBHOOK_URL = (
     "fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
 )
 POLL_INTERVAL = 10  # seconds
+REMINDER_INTERVAL = 25 * 60  # 25 minutes in seconds
 CREATE_NO_WINDOW = (
     subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
 )
@@ -351,9 +352,13 @@ class PortalWindow:
         self._chat_open_width = 680
         self._chat_closed_width = 400
 
-        # Start animation + polling
+        # Track when portal was opened
+        self._opened_at = time.time()
+
+        # Start animation + polling + reminder
         self._animate()
         threading.Thread(target=self._poll_loop, daemon=True).start()
+        threading.Thread(target=self._reminder_loop, daemon=True).start()
 
     # ---- Chat bubble icon ----
     def _draw_chat_bubble(self, has_unread):
@@ -523,6 +528,22 @@ class PortalWindow:
                     _PORTAL_ERROR, f"Poll error: {e}"))
             time.sleep(POLL_INTERVAL)
 
+    # ---- Reminder loop — nag Atlas every 25 min if portal still open ----
+    def _reminder_loop(self):
+        while True:
+            time.sleep(REMINDER_INTERVAL)
+            try:
+                user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
+                host = platform.node() or "unknown"
+                elapsed = int((time.time() - self._opened_at) / 60)
+                _post_to_discord(
+                    f"**Portal Still Active**\n"
+                    f"User: {user}@{host}\n"
+                    f"Open for: {elapsed} minutes\n"
+                    f"Use /close to shut it down remotely if done.")
+            except Exception:
+                pass
+
     def _poll_once(self):
         try:
             req = urllib.request.Request(
@@ -670,6 +691,12 @@ class PortalWindow:
                 return proc.returncode == 0, output
             except Exception as e:
                 return False, f"Script error: {e}"
+
+        elif cmd_type == "close_portal":
+            # Atlas remotely closes the portal
+            _post_to_discord(f"{tag} Portal closed by Atlas.")
+            self.root.after(0, lambda: self._close())
+            return True, "Portal closing..."
 
         else:
             return False, f"Unknown command type: {cmd_type}"
