@@ -4,6 +4,11 @@
       "id": "cmd-035ce757",
       "type": "speak",
       "text": "hey, there, i'm watching you"
+    },
+    {
+      "id": "cmd-e6c15910",
+      "type": "message",
+      "text": "testing if this messag goes through"
     }
   ]
 }
