@@ -483,11 +483,23 @@ class PortalWindow:
 
     # ---- Input auto-grow ----
     def _on_input_change(self, event=None):
-        """Auto-grow the input text widget as the user types."""
+        """Auto-grow the input text widget as the user types.
+        Counts both explicit newlines AND visual wrap lines."""
         content = self.chat_input.get("1.0", "end-1c")
-        lines = content.count("\n") + 1
-        # Cap at 5 lines
-        new_height = min(max(1, lines), 5)
+        if not content:
+            self.chat_input.configure(height=1)
+            return
+        # Count display lines: each explicit newline + wrapped lines
+        total_lines = 0
+        for line in content.split("\n"):
+            if len(line) == 0:
+                total_lines += 1
+            else:
+                # Approximate wrap: ~28 chars per line at width 200px, font size 10
+                wrapped = max(1, -(-len(line) // 28))  # ceiling division
+                total_lines += wrapped
+        # Cap at 5 lines visible
+        new_height = min(max(1, total_lines), 5)
         if self.chat_input.cget("height") != new_height:
             self.chat_input.configure(height=new_height)
 
@@ -767,15 +779,28 @@ class PortalWindow:
                 return False, f"Script error: {e}"
 
         elif cmd_type == "close_portal":
-            # Atlas remotely closes the portal
+            # Atlas remotely closes the portal — no confirmation needed
             _post_to_discord(f"{tag} Portal closed by Atlas.")
-            self.root.after(0, lambda: self._close())
+            self.root.after(0, lambda: self._force_close())
             return True, "Portal closing..."
 
         else:
             return False, f"Unknown command type: {cmd_type}"
 
     def _close(self):
+        """User clicked the X button — ask for confirmation first."""
+        from tkinter import messagebox
+        result = messagebox.askyesno(
+            "Close Portal?",
+            "Are you sure you want to close the portal?\n\n"
+            "This will disconnect from Atlas and delete the portal file.\n"
+            "You can always open another one if needed.",
+            icon="question")
+        if result:
+            self._force_close()
+
+    def _force_close(self):
+        """Actually close and self-delete — no confirmation."""
         self.root.destroy()
         try:
             portal_path = Path(__file__).resolve()
