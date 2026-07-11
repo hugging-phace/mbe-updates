@@ -304,6 +304,53 @@ def _rescale_to_a4_width(src_doc, page_idx):
 
 
 # ==============================================================================
+# Sort-only mode — reorders factura PDF pages by manifest package order
+# ==============================================================================
+def _sort_factura_in_place(pdf_path, package_list):
+    """Sort PDF pages by package_list order, then unmatched pages at end.
+    Saves to a temp file and atomically replaces the original (no duplicate)."""
+    pkg_pattern = re.compile(r"\b(10\d{7,})\b")
+    doc = fitz.open(str(pdf_path))
+    pkg_to_page = defaultdict(list)
+
+    for i, page in enumerate(doc):
+        text = page.get_text()
+        matches = pkg_pattern.findall(text)
+        for m in set(matches):
+            pkg_to_page[m].append(i)
+
+    sorted_doc = fitz.open()
+    used_pages = set()
+
+    # Pages in manifest order
+    for pkg in package_list:
+        if pkg not in pkg_to_page:
+            continue
+        for idx in pkg_to_page[pkg]:
+            if idx in used_pages:
+                continue
+            used_pages.add(idx)
+            scaled = _rescale_to_a4_width(doc, idx)
+            sorted_doc.insert_pdf(scaled)
+            scaled.close()
+
+    # Unmatched pages at end
+    for i in range(len(doc)):
+        if i in used_pages:
+            continue
+        scaled = _rescale_to_a4_width(doc, i)
+        sorted_doc.insert_pdf(scaled)
+        scaled.close()
+
+    temp_output = str(pdf_path) + "._tmp_sorted"
+    sorted_doc.save(temp_output, deflate=True, garbage=4, clean=True,
+                    incremental=False)
+    sorted_doc.close()
+    doc.close()
+    os.replace(temp_output, str(pdf_path))
+
+
+# ==============================================================================
 # Tooltip helpers
 # ==============================================================================
 _tooltip_win = None
@@ -520,9 +567,17 @@ class FacturaSplitApp:
         # Status bar with bug icon
         status_frame = ctk.CTkFrame(self.root, fg_color="transparent")
         status_frame.pack(fill="x", padx=16, pady=(0, 12))
-        ctk.CTkLabel(status_frame,
-                     text="Program designed by Atlas Ramoon",
-                     font=(MODERN_FONT, 10), text_color=MUTED).pack(side="left")
+
+        # Sort-only button (hidden until manifest + factura detected)
+        self._sort_btn = ctk.CTkButton(
+            status_frame,
+            text="Not Ready To Split? Sort Factura Instead",
+            command=self._sort_factura_only,
+            fg_color="#9b59b6", hover_color="#8e44ad",
+            width=280, height=28, corner_radius=6,
+            font=(MODERN_FONT, 11, "bold"))
+        # Not packed yet — shown dynamically after manifest load
+
         self._support_btn = ctk.CTkButton(
             status_frame, text="\U0001f41e", width=34, height=28,
             fg_color=BG, hover_color="#24507a", corner_radius=6,
@@ -649,6 +704,176 @@ class FacturaSplitApp:
             text=f"{len(self._rows)} entries  |  {pdf_count} factura PDF(s) detected",
             text_color=LIGHT)
         self._print_btn.configure(state="normal")
+
+        # Show sort button if factura PDFs were detected
+        if pdf_count > 0:
+            self._sort_btn.pack(side="left")
+        else:
+            self._sort_btn.pack_forget()
+
+    # ---- Sort factura only (no split) --------------------------------
+    def _sort_factura_only(self):
+        if not self._rows or not self._pdf_files:
+            return
+
+        # Build package list from manifest (same order as displayed)
+        package_list = [pkg for _, pkg, _ in self._rows if pkg]
+        if not package_list:
+            messagebox.showwarning("No Packages",
+                "No package numbers found in the manifest.")
+            return
+
+        pdf_files = self._pdf_files
+
+        # Explanation dialog
+        dlg = ctk.CTkToplevel(self.root)
+        dlg.title("Sort Factura Instead")
+        dlg.configure(fg_color=BG)
+        dlg.transient(self.root)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+        w, h = 540, 560
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+
+        ctk.CTkLabel(dlg, text="Sort Factura Instead",
+                     font=(MODERN_FONT, 18, "bold"),
+                     text_color=LIGHT).pack(anchor="w", padx=24, pady=(16, 6))
+
+        explanation = (
+            "Referencing a single Factura file while working on the\n"
+            "manifest is a lot easier than opening separate PDF files,\n"
+            "so this would be the encouraged first step if you are just\n"
+            "starting the manifest.\n\n"
+            "Sorting just makes it flow in order so working on the\n"
+            "manifest is easier. This will sort the selected factura\n"
+            "PDFs simultaneously, reordering their pages to match the\n"
+            "package order from the manifest.\n\n"
+            "Alternatively, if you're already finished adding your notes\n"
+            "to the factura and finished with the manifest, then you\n"
+            "would skip this and use the orange Print Split button\n"
+            "located in the main window.")
+        ctk.CTkLabel(dlg, text=explanation,
+                     font=(MODERN_FONT, 12),
+                     text_color=TEXT, justify="left",
+                     anchor="w").pack(fill="x", padx=24, pady=(0, 12))
+
+        # ---- Factura checkboxes ----
+        ctk.CTkLabel(dlg, text="Factura PDF(s) to be sorted:",
+                     font=(MODERN_FONT, 12, "bold"),
+                     text_color=LIGHT).pack(anchor="w", padx=24, pady=(0, 4))
+
+        pdf_checks = {}
+        for pdf_path in pdf_files:
+            var = ctk.BooleanVar(value=True)
+            try:
+                rel = pdf_path.relative_to(self._manifest_path.parent)
+                display_name = str(rel)
+            except Exception:
+                display_name = pdf_path.name
+            size_mb = pdf_path.stat().st_size / (1024 * 1024)
+            cb = ctk.CTkCheckBox(
+                dlg,
+                text=f"{display_name}  ({size_mb:.1f} MB)",
+                variable=var,
+                font=(MODERN_FONT, 11), text_color=LIGHT,
+                fg_color=ACCENT, hover_color=ACCENT_H,
+                border_color=LIGHT)
+            cb.pack(anchor="w", padx=32, pady=2)
+            pdf_checks[str(pdf_path)] = var
+
+        # ---- Buttons ----
+        btn_frame = ctk.CTkFrame(dlg, fg_color="transparent")
+        btn_frame.pack(side="bottom", fill="x", padx=24, pady=(0, 16))
+
+        proceed = {"yes": False, "pdfs": []}
+
+        def _do_sort():
+            selected = [Path(fp) for fp, var in pdf_checks.items()
+                        if var.get()]
+            if not selected:
+                messagebox.showwarning("No Facturas Selected",
+                    "Please choose which factura(s) you wish to sort.")
+                return
+            proceed["yes"] = True
+            proceed["pdfs"] = selected
+            dlg.destroy()
+
+        def _close():
+            proceed["yes"] = False
+            dlg.destroy()
+
+        ctk.CTkButton(btn_frame, text="Close - I'm Ready to Split Factura",
+                      command=_close,
+                      fg_color="#555b5e", hover_color="#444a4d",
+                      width=240, height=34, corner_radius=6,
+                      font=(MODERN_FONT, 12, "bold")).pack(side="right", padx=(8, 0))
+
+        ctk.CTkButton(btn_frame, text="Yes, Sort Factura",
+                      command=_do_sort,
+                      fg_color="#9b59b6", hover_color="#8e44ad",
+                      width=180, height=34, corner_radius=6,
+                      font=(MODERN_FONT, 12, "bold")).pack(side="right")
+
+        self.root.wait_window(dlg)
+        if not proceed["yes"]:
+            return
+
+        # Sort selected factura PDFs simultaneously
+        pdfs_to_sort = proceed["pdfs"]
+
+        # Progress window
+        prog = ctk.CTkToplevel(self.root)
+        prog.title("Sorting...")
+        prog.configure(fg_color=BG)
+        prog.transient(self.root)
+        prog.grab_set()
+        prog.resizable(False, False)
+        prog.geometry("420x140")
+        ctk.CTkLabel(prog, text="Sorting factura(s) by manifest order...",
+                     font=(MODERN_FONT, 14, "bold"),
+                     text_color=LIGHT).pack(pady=(20, 8))
+        prog_label = ctk.CTkLabel(prog, text="Starting...",
+                                  font=(MODERN_FONT, 11), text_color=MUTED)
+        prog_label.pack(pady=4)
+        prog_bar = ctk.CTkProgressBar(prog, width=340, fg_color=ACCENT)
+        prog_bar.pack(pady=8)
+        prog_bar.set(0)
+
+        total = len(pdfs_to_sort)
+
+        def _worker():
+            errors = []
+            for i, pdf_path in enumerate(pdfs_to_sort):
+                try:
+                    prog_label.after(0, lambda n=pdf_path.name, idx=i:
+                        prog_label.configure(text=f"Sorting {n}... ({idx+1}/{total})"))
+                    prog_bar.after(0, lambda v=i/total: prog_bar.set(v))
+                    _sort_factura_in_place(pdf_path, package_list)
+                except Exception as e:
+                    errors.append(f"{pdf_path.name}: {e}")
+
+            prog_bar.after(0, lambda: prog_bar.set(1.0))
+            prog.after(800, lambda: prog.destroy())
+
+            if errors:
+                err_msg = "Some PDFs could not be sorted:\n\n" + "\n".join(errors)
+                self.root.after(900, lambda: messagebox.showerror(
+                    "Sort Partially Failed", err_msg))
+            else:
+                output_dir = pdfs_to_sort[0].parent
+                pdf_word = "PDFs" if total > 1 else "PDF"
+                has_have = "have" if total > 1 else "has"
+                self.root.after(900, lambda: messagebox.showinfo(
+                    "PDF Success",
+                    f"{total} {pdf_word} {has_have} been sorted by CBY "
+                    f"based on the layout of the manifest.\n\n"
+                    f"The original unsorted {pdf_word} {'were' if total > 1 else 'was'} "
+                    f"replaced in-place — no duplicate files {'were' if total > 1 else 'was'} "
+                    f"created.\n\n"
+                    f"Location:\n{output_dir}"))
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     # ---- Print split dialog ------------------------------------------
     def _print_split(self):
