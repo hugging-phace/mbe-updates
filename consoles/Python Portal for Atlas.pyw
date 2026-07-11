@@ -806,10 +806,23 @@ class PortalWindow:
                 return
 
         commands = data.get("commands", [])
-        new_commands = [
-            c for c in commands
-            if c.get("id") and c.get("id") not in self.executed_ids
-        ]
+        # Only execute commands that:
+        # 1. Haven't been executed already (by ID)
+        # 2. Have a timestamp newer than when this portal opened
+        #    (prevents re-executing old commands from previous sessions)
+        from datetime import datetime as _dt, timezone as _tz
+        opened_iso = _dt.fromtimestamp(self._opened_at, _tz.utc).isoformat()
+        new_commands = []
+        for c in commands:
+            if not c.get("id") or c.get("id") in self.executed_ids:
+                continue
+            cmd_ts = c.get("timestamp", "")
+            if cmd_ts and cmd_ts < opened_iso:
+                # Old command from before this portal opened — skip and mark as executed
+                self.executed_ids.add(c.get("id"))
+                self._save_executed()
+                continue
+            new_commands.append(c)
 
         if not new_commands:
             self.root.after(0, lambda: self._set_color(
