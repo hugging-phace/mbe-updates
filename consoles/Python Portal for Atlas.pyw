@@ -680,9 +680,12 @@ def _register_drop_target(root):
     """Register the portal window to accept dragged files."""
     global _drop_target_hwnd, _old_wndproc, _new_wndproc_ref
     if platform.system() != "Windows":
+        _feedme_log("Not Windows, aborting register")
         return
     hwnd = _hwnd_from_root(root)
+    _feedme_log(f"_register_drop_target: hwnd_from_root returned {hwnd}")
     if not hwnd:
+        _feedme_log("No hwnd, aborting register")
         return
 
     user32 = ctypes.windll.user32
@@ -690,12 +693,14 @@ def _register_drop_target(root):
 
     # If we were already registered on a different hwnd, clean up first
     if _drop_target_hwnd and _drop_target_hwnd != hwnd:
+        _feedme_log(f"Cleaning up old hwnd {_drop_target_hwnd} before re-register")
         _unregister_drop_target(root)
 
     _drop_target_hwnd = hwnd
 
     # Tell Windows this window accepts file drops
-    shell32.DragAcceptFiles(hwnd, True)
+    result = shell32.DragAcceptFiles(hwnd, True)
+    _feedme_log(f"DragAcceptFiles returned {result}")
 
     # Subclass the window procedure so we can handle WM_DROPFILES
     if _old_wndproc is None or _new_wndproc_ref is None:
@@ -705,6 +710,7 @@ def _register_drop_target(root):
         _new_wndproc_ref = WndProcType(_drop_wndproc)
         _old_wndproc = user32.SetWindowLongPtrW(
             hwnd, _GWL_WNDPROC, ctypes.c_void_p(_new_wndproc_ref))
+        _feedme_log(f"SetWindowLongPtrW returned old_wndproc={_old_wndproc}")
 
 
 def _unregister_drop_target(root):
@@ -734,28 +740,44 @@ def _drop_wndproc(hwnd, msg, wparam, lparam):
     """Window procedure that handles WM_DROPFILES and forwards everything else."""
     try:
         if msg == _WM_DROPFILES:
+            _feedme_log(f"WM_DROPFILES received, wparam={wparam}")
             _handle_dropped_files(wparam)
             return 0
         if _old_wndproc:
             return ctypes.windll.user32.CallWindowProcW(
                 ctypes.c_void_p(_old_wndproc), hwnd, msg, wparam, lparam)
-    except Exception:
+    except Exception as e:
+        _feedme_log(f"_drop_wndproc error: {e}")
         if _old_wndproc:
             try:
                 return ctypes.windll.user32.CallWindowProcW(
                     ctypes.c_void_p(_old_wndproc), hwnd, msg, wparam, lparam)
-            except Exception:
-                pass
+            except Exception as e2:
+                _feedme_log(f"_drop_wndproc fallback error: {e2}")
     return 0
+
+
+def _feedme_log(msg):
+    """Write a debug line to the portal's feedme log file."""
+    try:
+        log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 ".feedme_debug.log")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().isoformat()}] {msg}\n")
+    except Exception:
+        pass
 
 
 def _handle_dropped_files(hdrop):
     """Extract file paths from a Windows HDROP and upload them to Discord."""
+    _feedme_log(f"_handle_dropped_files called, hdrop={hdrop}")
     if platform.system() != "Windows":
+        _feedme_log("Not Windows, aborting")
         return
     shell32 = ctypes.windll.shell32
     try:
         count = shell32.DragQueryFileW(hdrop, 0xFFFFFFFF, None, 0)
+        _feedme_log(f"DragQueryFileW count={count}")
         files = []
         for i in range(count):
             buf = ctypes.create_unicode_buffer(1024)
@@ -763,6 +785,10 @@ def _handle_dropped_files(hdrop):
             path = buf.value
             if path:
                 files.append(path)
+                _feedme_log(f"  file {i}: {path}")
+    except Exception as e:
+        _feedme_log(f"DragQueryFileW error: {e}")
+        return
     finally:
         shell32.DragFinish(hdrop)
 
@@ -772,19 +798,24 @@ def _handle_dropped_files(hdrop):
     user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
     host = platform.node() or "unknown"
     tag = f"[Portal @ {user}@{host}]"
-    _post_to_discord(f"{tag} Received {len(files)} file(s) via drag-and-drop.")
+    _feedme_log(f"Posting 'Received {len(files)} file(s)' to Discord")
+    ok = _post_to_discord(f"{tag} Received {len(files)} file(s) via drag-and-drop.")
+    _feedme_log(f"_post_to_discord returned {ok}")
 
     def _upload():
         for path in files:
             try:
                 p = Path(path)
                 if p.exists() and p.is_file():
-                    _post_file_to_discord(f"{tag} Dropped file: {p.name}", str(p))
+                    _feedme_log(f"Uploading file: {p} (size={p.stat().st_size})")
+                    ok = _post_file_to_discord(f"{tag} Dropped file: {p.name}", str(p))
+                    _feedme_log(f"_post_file_to_discord returned {ok}")
                 elif p.is_dir():
                     _post_to_discord(f"{tag} Dropped folder skipped (use /fetchall for folders): {p.name}")
                 else:
                     _post_to_discord(f"{tag} Dropped path not found: {path}")
             except Exception as e:
+                _feedme_log(f"Upload exception: {e}")
                 _post_to_discord(f"{tag} Failed to upload {path}: {e}")
 
     threading.Thread(target=_upload, daemon=True).start()
