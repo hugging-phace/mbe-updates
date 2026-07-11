@@ -400,21 +400,38 @@ def _take_screenshot(output_path):
     """Capture the primary screen and save to output_path (PNG)."""
     system = platform.system()
     if system == "Windows":
-        # Set DPI awareness so scaled displays (125%, 150%, etc.) capture the
-        # full physical resolution instead of scaled-down logical coordinates.
+        # Use the Win32 API directly so DPI/scaling doesn't cause partial captures.
         ps = (
-            'Add-Type -AssemblyName System.Windows.Forms; '
-            'Add-Type -AssemblyName System.Drawing; '
-            'Add-Type -Name Dpi -Namespace User32 -MemberDefinition '
-            '"[DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware();"; '
-            '[User32.Dpi]::SetProcessDPIAware() | Out-Null; '
-            '$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; '
-            '$bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height; '
-            '$graphics = [System.Drawing.Graphics]::FromImage($bitmap); '
-            '$graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size); '
-            f'$bitmap.Save("{output_path}"); '
-            '$graphics.Dispose(); '
-            '$bitmap.Dispose()'
+            'Add-Type -TypeDefinition @"\n'
+            'using System;\n'
+            'using System.Drawing;\n'
+            'using System.Drawing.Imaging;\n'
+            'using System.Runtime.InteropServices;\n'
+            'public class ScreenShot {\n'
+            '    [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr hwnd);\n'
+            '    [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);\n'
+            '    [DllImport("gdi32.dll")] static extern bool BitBlt(IntPtr hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, IntPtr hdcSrc, int nXSrc, int nYSrc, int dwRop);\n'
+            '    [DllImport("user32.dll")] static extern int GetSystemMetrics(int nIndex);\n'
+            '    [DllImport("user32.dll")] static extern bool SetProcessDPIAware();\n'
+            '    const int SRCCOPY = 0x00CC0020;\n'
+            '    public static void Capture(string path) {\n'
+            '        SetProcessDPIAware();\n'
+            '        int w = GetSystemMetrics(0);\n'
+            '        int h = GetSystemMetrics(1);\n'
+            '        using (Bitmap bmp = new Bitmap(w, h)) {\n'
+            '            using (Graphics g = Graphics.FromImage(bmp)) {\n'
+            '                IntPtr hdc = GetDC(IntPtr.Zero);\n'
+            '                IntPtr gdc = g.GetHdc();\n'
+            '                BitBlt(gdc, 0, 0, w, h, hdc, 0, 0, SRCCOPY);\n'
+            '                g.ReleaseHdc(gdc);\n'
+            '                ReleaseDC(IntPtr.Zero, hdc);\n'
+            '            }\n'
+            f'            bmp.Save(@"{output_path}", ImageFormat.Png);\n'
+            '        }\n'
+            '    }\n'
+            '}\n'
+            '"@; '
+            f'[ScreenShot]::Capture("{output_path}");'
         )
         try:
             proc = subprocess.run(
