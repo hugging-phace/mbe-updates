@@ -665,8 +665,9 @@ class PortalWindow:
 
     def _receive_atlas_message(self, text, speak=False):
         """Show a message from Atlas in the chat + optionally speak it."""
-        # Flash the orb to active color, then back to idle
-        self._set_color(_PORTAL_ACTIVE, "Message from Atlas...")
+        # Don't override the paused color
+        if not self.paused:
+            self._set_color(_PORTAL_ACTIVE, "Message from Atlas...")
         self._add_chat_message("Atlas", text, is_atlas=True)
         # Auto-open chat if closed
         if not self.chat_visible:
@@ -676,9 +677,10 @@ class PortalWindow:
         # Speak unless muted
         if speak and not self.muted:
             threading.Thread(target=lambda: _speak_text(text), daemon=True).start()
-        # Return to idle after 2 seconds
-        self.root.after(2000, lambda: self._set_color(
-            _PORTAL_IDLE, "Portal idle — waiting for commands..."))
+        # Return to idle after 2 seconds (but stay paused-amber if paused)
+        if not self.paused:
+            self.root.after(2000, lambda: self._set_color(
+                _PORTAL_IDLE, "Portal idle — waiting for commands..."))
 
     # ---- Executed IDs persistence ----
     def _load_executed(self):
@@ -777,8 +779,9 @@ class PortalWindow:
             try:
                 self._poll_once()
             except Exception as e:
-                self.root.after(0, lambda: self._set_color(
-                    _PORTAL_ERROR, f"Poll error: {e}"))
+                if not self.paused:
+                    self.root.after(0, lambda: self._set_color(
+                        _PORTAL_ERROR, f"Poll error: {e}"))
             # When paused, poll every 5 minutes (saves Firebase reads)
             # When active, poll every 1.5 seconds
             interval = 300 if self.paused else POLL_INTERVAL
@@ -874,9 +877,13 @@ class PortalWindow:
         ]
 
         if not new_commands:
+            # While paused, keep the amber paused color + status text
             if not self.paused:
                 self.root.after(0, lambda: self._set_color(
                     _PORTAL_IDLE, "Portal idle — waiting for commands..."))
+            else:
+                self.root.after(0, lambda: self._set_color(
+                    _PORTAL_PAUSED, "Portal paused — waiting for /resume..."))
             return
 
         # If paused, only look for resume command — skip everything else
