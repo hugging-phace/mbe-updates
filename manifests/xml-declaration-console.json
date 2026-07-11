@@ -1,5 +1,5 @@
 {
-  "version": "2.0.1",
-  "changelog": "Added remote support portal button with pale green icon.",
+  "version": "2.0.2",
+  "changelog": "Fixed portal button crash (used wrong window reference).",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }
