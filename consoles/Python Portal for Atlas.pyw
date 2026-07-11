@@ -265,10 +265,10 @@ class PortalWindow:
         bottom_bar = tk.Frame(self.main_frame, bg=_BG)
         bottom_bar.pack(side="bottom", fill="x", padx=12, pady=(0, 8))
 
-        # Chat bubble icon (left side of bottom bar)
+        # Chat bubble icon (right side of bottom bar — same side chat opens)
         self.chat_btn = tk.Canvas(bottom_bar, width=28, height=28,
                                    bg=_BG, highlightthickness=0, cursor="hand2")
-        self.chat_btn.pack(side="left")
+        self.chat_btn.pack(side="right")
         self._draw_chat_bubble(False)
         self.chat_btn.bind("<Button-1>", lambda e: self._toggle_chat())
 
@@ -276,7 +276,7 @@ class PortalWindow:
         tk.Label(bottom_bar,
                  text="Close to delete this portal\n(you can always open another).",
                  font=("Segoe UI", 7), bg=_BG, fg=_MUTED,
-                 justify="center").pack(side="right")
+                 justify="left").pack(side="left")
 
         # ---- Chat sidebar (right, hidden initially) ----
         self.chat_frame = tk.Frame(root, bg=_CHAT_BG, width=300, height=360)
