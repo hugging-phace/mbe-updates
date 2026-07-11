@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
-  "changelog": "Initial version with remote support.",
+  "version": "1.0.2",
+  "changelog": "Added Sort Factura Instead button with multi-PDF sorting + in-place overwrite.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Factura%20Splitter%20Console.pyw"
 }

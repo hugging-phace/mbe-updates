@@ -1,8 +1,5 @@
 import os
 import sys
-import smtplib
-import keyring
-import openpyxl
 import re
 import json
 import urllib.request
@@ -14,14 +11,74 @@ import base64
 import ast
 import getpass
 import uuid
+import importlib
+import subprocess
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 from email.policy import SMTP
 from email import message_from_bytes
-from PIL import Image
 from tkinter import messagebox
+import tkinter as tk
 
+# ------------------------------------------------------------------
+# Dependency check
+# ------------------------------------------------------------------
+REQUIRED_PACKAGES = {
+    "customtkinter": "customtkinter",
+    "openpyxl":      "openpyxl",
+    "keyring":       "keyring",
+    "PIL":           "Pillow",
+}
+
+def _check_and_install_dependencies():
+    missing = []
+    for module_name, pip_name in REQUIRED_PACKAGES.items():
+        try:
+            importlib.import_module(module_name)
+        except ImportError:
+            missing.append((module_name, pip_name))
+    if not missing:
+        return True
+    missing_names = [f"  - {pip_name}" for _, pip_name in missing]
+    msg = ("The following packages are required but not installed:\n\n"
+           + "\n".join(missing_names)
+           + "\n\nWould you like to install them now via pip?")
+    root = tk.Tk()
+    root.withdraw()
+    result = messagebox.askyesno("Missing Dependencies", msg)
+    if not result:
+        root.destroy()
+        return False
+    pip_args = [sys.executable, "-m", "pip", "install"] + [pn for _, pn in missing]
+    try:
+        result = subprocess.run(pip_args, capture_output=True, text=True)
+        if result.returncode != 0:
+            messagebox.showerror("Installation Failed",
+                f"Could not install packages:\n\n{result.stderr[:500]}")
+            root.destroy()
+            return False
+    except Exception as e:
+        messagebox.showerror("Installation Failed", f"Error running pip:\n{e}")
+        root.destroy()
+        return False
+    root.destroy()
+    for module_name, _ in missing:
+        try:
+            importlib.import_module(module_name)
+        except ImportError:
+            messagebox.showerror("Still Missing",
+                f"Package '{module_name}' still could not be imported\n"
+                f"after installation. Please install it manually.")
+            return False
+    return True
+
+if not _check_and_install_dependencies():
+    sys.exit(1)
+
+import keyring
+import openpyxl
+from PIL import Image
 import customtkinter as ctk
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
