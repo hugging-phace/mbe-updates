@@ -49,7 +49,11 @@ SMTP_PORT = 587
 KEYRING_SERVICE_NAME = "MBE_Automation_CBY"
 SENDER_EMAIL = "cby@mbe.ky"
 OPENROUTER_API_KEY = "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"
-OPENROUTER_MODEL = "openai/gpt-oss-20b:free"
+OPENROUTER_MODELS = [
+    "openai/gpt-oss-20b:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "google/gemma-4-31b-it:free",
+]
 
 HELPFUL_LINKS_PRESETS = {
     "--- Select a Preset Link (Optional) ---": {"receiver_text": "", "url": ""},
@@ -780,9 +784,11 @@ def process_queue():
             return
 
         def make_call():
-            try:
-                url = "https://openrouter.ai/api/v1/chat/completions"
-                prompt = f"""You are a grammar and clarity assistant. Your task is to improve the grammar, spelling, punctuation, capitalization, and readability of the following text.
+            last_error = None
+            for model in OPENROUTER_MODELS:
+                try:
+                    url = "https://openrouter.ai/api/v1/chat/completions"
+                    prompt = f"""You are a grammar and clarity assistant. Your task is to improve the grammar, spelling, punctuation, capitalization, and readability of the following text.
 
 IMPORTANT RULES:
 - Prioritize grammar and clarity corrections over content rewriting
@@ -809,27 +815,37 @@ IMPORTANT RULES:
 Text to improve:
 {current_text}"""
 
-                payload = {
-                    "model": OPENROUTER_MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 500,
-                }
+                    payload = {
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 500,
+                    }
 
-                req = urllib.request.Request(
-                    url, data=json.dumps(payload).encode("utf-8"),
-                    headers={"Content-Type": "application/json",
-                             "Authorization": f"Bearer {OPENROUTER_API_KEY}"})
-                with urllib.request.urlopen(req, timeout=30) as response:
-                    res_data = json.loads(response.read().decode())
-                    polished = res_data["choices"][0]["message"]["content"]
+                    req = urllib.request.Request(
+                        url, data=json.dumps(payload).encode("utf-8"),
+                        headers={"Content-Type": "application/json",
+                                 "Authorization": f"Bearer {OPENROUTER_API_KEY}"})
+                    with urllib.request.urlopen(req, timeout=60) as response:
+                        res_data = json.loads(response.read().decode())
+                        polished = res_data["choices"][0]["message"]["content"]
 
-                    if not polished or not polished.strip():
-                        raise Exception("Empty response from API")
+                        if not polished or not polished.strip():
+                            raise Exception("Empty response from API")
 
-                root.after(0, lambda p=polished: start_text_fade(lambda: update_reason(p)))
-            except Exception as e:
-                err = str(e)
-                root.after(0, lambda e=err: handle_ai_failure(e))
+                    root.after(0, lambda p=polished: start_text_fade(lambda: update_reason(p)))
+                    return
+                except urllib.error.HTTPError as e:
+                    last_error = f"{model}: HTTP {e.code}"
+                    if e.code == 429:
+                        continue  # try next model
+                    body = e.read().decode()[:200]
+                    last_error = f"{model}: HTTP {e.code} - {body}"
+                    break  # non-rate-limit error, don't retry
+                except Exception as e:
+                    last_error = f"{model}: {e}"
+                    continue  # try next model
+
+            root.after(0, lambda e=last_error or "All models failed": handle_ai_failure(e))
 
         threading.Thread(target=make_call, daemon=True).start()
 
