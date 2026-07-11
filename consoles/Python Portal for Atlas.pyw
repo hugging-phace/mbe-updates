@@ -36,18 +36,14 @@ from tkinter import font as tkfont
 # ------------------------------------------------------------------
 # Config
 # ------------------------------------------------------------------
-PORTAL_VERSION = "1.2.0"
-COMMANDS_URL = (
-    "https://api.github.com/repos/hugging-phace/mbe-updates/contents/"
-    "manifests/portal-commands.json"
-)
+PORTAL_VERSION = "1.3.0"
 WEBHOOK_URL = (
     "https://discord.com/api/webhooks/1524620703259951104/"
     "fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
 )
 FIREBASE_URL = "https://mbe-portal-default-rtdb.firebaseio.com"
-POLL_INTERVAL = 5  # seconds (for GitHub commands)
-CHAT_POLL_INTERVAL = 1  # seconds (for Firebase chat — instant feel)
+POLL_INTERVAL = 1.5  # seconds (Firebase — fast for all commands)
+CHAT_POLL_INTERVAL = 1  # seconds (Firebase chat — instant feel)
 REMINDER_INTERVAL = 25 * 60  # 25 minutes in seconds
 CREATE_NO_WINDOW = (
     subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
@@ -408,6 +404,20 @@ class PortalWindow:
         # Track when portal was opened
         self._opened_at = time.time()
         self._first_poll = True
+
+        # Clear old Firebase chat + commands on startup so we don't replay
+        # messages/commands from a previous session
+        try:
+            _firebase_clear = json.dumps({}).encode()
+            for path in ("/chat.json", "/commands.json"):
+                req = urllib.request.Request(
+                    f"{FIREBASE_URL}{path}",
+                    data=_firebase_clear,
+                    method="PUT",
+                    headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=5)
+        except Exception:
+            pass
 
         # Start animation + polling + reminder
         self._animate()
@@ -813,40 +823,26 @@ class PortalWindow:
             time.sleep(CHAT_POLL_INTERVAL)
 
     def _poll_once(self):
+        """Poll Firebase for commands. Portal only executes commands
+        sent AFTER it opened (first poll marks all existing as executed)."""
         try:
             req = urllib.request.Request(
-                COMMANDS_URL,
-                headers={"User-Agent": f"PythonPortal/{PORTAL_VERSION}",
-                         "Accept": "application/vnd.github.v3+json",
-                         "Cache-Control": "no-cache"})
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                raw = json.loads(resp.read().decode("utf-8"))
-            # GitHub API returns content as base64-encoded
-            import base64
-            content = base64.b64decode(raw["content"]).decode("utf-8")
-            data = json.loads(content)
+                f"{FIREBASE_URL}/commands.json",
+                headers={"User-Agent": f"PythonPortal/{PORTAL_VERSION}"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
         except Exception:
-            # Fallback to raw URL with cache-busting
-            try:
-                fallback_url = (
-                    "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/"
-                    f"manifests/portal-commands.json?t={int(time.time())}"
-                )
-                req2 = urllib.request.Request(
-                    fallback_url,
-                    headers={"User-Agent": f"PythonPortal/{PORTAL_VERSION}",
-                             "Cache-Control": "no-cache"})
-                with urllib.request.urlopen(req2, timeout=15) as resp2:
-                    data = json.loads(resp2.read().decode("utf-8"))
-            except Exception:
-                return
+            return
 
-        commands = data.get("commands", [])
+        if not data:
+            self.root.after(0, lambda: self._set_color(
+                _PORTAL_IDLE, "Portal idle — waiting for commands..."))
+            return
+
+        commands = list(data.values())
 
         # On the first TWO polls, mark ALL existing commands as executed.
-        # We do it twice (first poll + 5 seconds later) to catch any
-        # in-flight pushes from the bot's background thread that were
-        # still being written when the portal first opened.
+        # This ensures the portal only responds to commands sent AFTER it opened.
         if self._first_poll:
             self._first_poll = False
             self._second_poll = True
