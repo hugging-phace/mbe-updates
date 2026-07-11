@@ -40,6 +40,12 @@
       "type": "speak",
       "text": "i want it to feel a bit more instantious",
       "timestamp": "2026-07-11T06:15:31.852525+00:00"
+    },
+    {
+      "id": "cmd-66cb3959",
+      "type": "speak",
+      "text": "sorry i meant to say instantaneous",
+      "timestamp": "2026-07-11T06:16:00.526475+00:00"
     }
   ]
 }
