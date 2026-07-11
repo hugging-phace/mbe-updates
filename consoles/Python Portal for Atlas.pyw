@@ -990,7 +990,7 @@ class PortalWindow:
                     _PORTAL_IDLE, "Portal idle — listening for Atlas' commands..."))
             else:
                 self.root.after(0, lambda: self._set_color(
-                    _PORTAL_PAUSED, "Portal paused — waiting for /resume..."))
+                    _PORTAL_PAUSED, "Portal paused — waiting for Atlas to resume..."))
             return
 
         # If paused, only look for resume command — skip everything else
@@ -1202,7 +1202,7 @@ class PortalWindow:
             # Atlas pauses the portal — stops executing commands
             self.paused = True
             self.root.after(0, lambda: self._set_color(
-                _PORTAL_PAUSED, "Portal paused — waiting for /resume..."))
+                _PORTAL_PAUSED, "Portal paused — waiting for Atlas to resume..."))
             _post_to_discord(f"{tag} Portal paused by Atlas. Use /resume to continue.")
             return True, "Portal paused"
 
