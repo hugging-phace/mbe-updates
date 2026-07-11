@@ -505,7 +505,7 @@ class PortalWindow:
             self._welcome_items.append(item)
 
         # "Welcome to Space" text — manually shifted left for visual centering
-        cx = (w // 2) - 40
+        cx = (w // 2) - 20
         cy = h // 2 - 20
         item = self.chat_canvas.create_text(
             cx, cy, text="Welcome to Space",
