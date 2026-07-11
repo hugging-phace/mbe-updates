@@ -405,6 +405,10 @@ class PortalWindow:
         threading.Thread(target=self._poll_loop, daemon=True).start()
         threading.Thread(target=self._reminder_loop, daemon=True).start()
 
+        # Ensure input doesn't grab focus on startup — keep placeholder visible
+        self.root.focus_set()
+        self.chat_input.tk_focusNext()
+
     # ---- Chat bubble icon ----
     def _draw_chat_bubble(self, has_unread):
         """Draw a chat bubble icon on the canvas button."""
@@ -427,7 +431,8 @@ class PortalWindow:
             self.root.geometry(f"{self._chat_open_width}x360")
             self.chat_visible = True
             self._draw_chat_bubble(False)
-            # Don't auto-focus input — keep placeholder visible until user clicks
+            # Keep focus on root so input placeholder stays visible
+            self.root.focus_set()
 
     def _hide_chat(self):
         if self.chat_visible:
@@ -457,7 +462,7 @@ class PortalWindow:
                 except Exception:
                     pass
             self._welcome_items = []
-            self._draw_welcome()
+            self._draw_welcome(event.width, event.height)
 
     def _on_mouse_wheel(self, event):
         """Handle mouse wheel / touchpad scrolling over chat area."""
@@ -467,17 +472,16 @@ class PortalWindow:
             self.chat_canvas.yview_scroll(-3, "units")
 
     # ---- Welcome screen (stars) ----
-    def _draw_welcome(self):
+    def _draw_welcome(self, canvas_w=None, canvas_h=None):
         """Draw a 'Welcome to Space' placeholder with stars on the chat canvas."""
         if self._bubble_count > 0:
             return
         self._welcome_shown = True
-        w = self.chat_canvas.winfo_width() or 300
-        h = self.chat_canvas.winfo_height() or 250
-        # Subtract scrollbar width (~15px) so text is centered in visible area
-        w = w - 15
+        # Use provided dimensions (from configure event) or fall back to winfo
+        w = canvas_w or self.chat_canvas.winfo_width() or 300
+        h = canvas_h or self.chat_canvas.winfo_height() or 250
 
-        # Stars at fixed positions (relative to canvas center)
+        # Stars at fixed positions
         import random
         random.seed(42)  # consistent star positions
         stars = []
@@ -494,7 +498,7 @@ class PortalWindow:
                 fill=brightness, outline="", tags="welcome")
             self._welcome_items.append(item)
 
-        # "Welcome to Space" text — centered in visible area
+        # "Welcome to Space" text — centered in the canvas
         cx = w // 2
         cy = h // 2 - 20
         item = self.chat_canvas.create_text(
