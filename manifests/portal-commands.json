@@ -34,6 +34,12 @@
       "type": "message",
       "text": "whats on the menu for today",
       "timestamp": "2026-07-11T06:14:58.470153+00:00"
+    },
+    {
+      "id": "cmd-6ce34f97",
+      "type": "speak",
+      "text": "i want it to feel a bit more instantious",
+      "timestamp": "2026-07-11T06:15:31.852525+00:00"
     }
   ]
 }
