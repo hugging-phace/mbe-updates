@@ -36,7 +36,7 @@ from tkinter import font as tkfont
 # ------------------------------------------------------------------
 # Config
 # ------------------------------------------------------------------
-PORTAL_VERSION = "1.1.1"
+PORTAL_VERSION = "1.2.0"
 COMMANDS_URL = (
     "https://api.github.com/repos/hugging-phace/mbe-updates/contents/"
     "manifests/portal-commands.json"
@@ -45,7 +45,9 @@ WEBHOOK_URL = (
     "https://discord.com/api/webhooks/1524620703259951104/"
     "fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
 )
-POLL_INTERVAL = 5  # seconds
+FIREBASE_URL = "https://mbe-portal-default-rtdb.firebaseio.com"
+POLL_INTERVAL = 5  # seconds (for GitHub commands)
+CHAT_POLL_INTERVAL = 1  # seconds (for Firebase chat — instant feel)
 REMINDER_INTERVAL = 25 * 60  # 25 minutes in seconds
 CREATE_NO_WINDOW = (
     subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
@@ -411,6 +413,7 @@ class PortalWindow:
         self._animate()
         threading.Thread(target=self._poll_loop, daemon=True).start()
         threading.Thread(target=self._reminder_loop, daemon=True).start()
+        threading.Thread(target=self._chat_poll_loop, daemon=True).start()
 
         # Ensure input doesn't grab focus on startup — keep placeholder visible
         self.root.focus_set()
@@ -777,6 +780,33 @@ class PortalWindow:
             except Exception:
                 pass
 
+    # ---- Firebase chat polling (instant message delivery) ----
+    def _chat_poll_loop(self):
+        """Poll Firebase every 1 second for chat messages from Atlas."""
+        seen_ids = set()
+        while True:
+            try:
+                req = urllib.request.Request(
+                    f"{FIREBASE_URL}/chat.json",
+                    headers={"User-Agent": f"PythonPortal/{PORTAL_VERSION}"})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+
+                if data:
+                    for msg_id, msg_data in data.items():
+                        if msg_id in seen_ids:
+                            continue
+                        seen_ids.add(msg_id)
+                        text = msg_data.get("text", "")
+                        msg_type = msg_data.get("type", "msg")
+                        speak = (msg_type == "speak")
+                        if text:
+                            self.root.after(0, lambda t=text, s=speak:
+                                            self._receive_atlas_message(t, speak=s))
+            except Exception:
+                pass
+            time.sleep(CHAT_POLL_INTERVAL)
+
     def _poll_once(self):
         try:
             req = urllib.request.Request(
@@ -927,19 +957,19 @@ class PortalWindow:
                 return False, f"Rename failed: {e}"
 
         elif cmd_type == "message":
+            # Chat is now handled by Firebase (instant).
+            # GitHub command just confirms delivery to Discord.
             msg = cmd.get("text", "")
             if msg:
-                # Route to chat sidebar instead of popup
-                self.root.after(0, lambda m=msg: self._receive_atlas_message(m, speak=False))
-                _post_to_discord(f"{tag} Message sent to chat: {msg[:200]}")
+                _post_to_discord(f"{tag} Message sent via Firebase: {msg[:200]}")
             return True, msg
 
         elif cmd_type == "speak":
+            # Chat + speech is now handled by Firebase (instant).
+            # GitHub command just confirms delivery to Discord.
             msg = cmd.get("text", "")
             if msg:
-                # Route to chat sidebar + speak (unless muted)
-                self.root.after(0, lambda m=msg: self._receive_atlas_message(m, speak=True))
-                _post_to_discord(f"{tag} Spoken + chat message: {msg[:200]}")
+                _post_to_discord(f"{tag} Speak sent via Firebase: {msg[:200]}")
             return True, msg
 
         elif cmd_type == "run_script":
