@@ -61,10 +61,10 @@ _PORTAL_ERROR = "#ef4444"
 _TEXT = "#ffffff"
 _MUTED = "#6b7280"
 _CHAT_BG = "#0d0d18"
-_CHAT_BUBBLE_ATLAS = "#2a1a3e"
-_CHAT_BUBBLE_USER = "#1a2a3e"
-_CHAT_ENTRY_BG = "#1a1a2e"
-_CHAT_BORDER = "#2a2a3e"
+_CHAT_BUBBLE_ATLAS = "#0a0a12"
+_CHAT_BUBBLE_USER = "#2a1a3e"
+_CHAT_ENTRY_BG = "#1a0a2e"
+_CHAT_BORDER = "#4a2a6e"
 _ACCENT = "#9b59b6"
 
 # ------------------------------------------------------------------
@@ -328,6 +328,15 @@ class PortalWindow:
         self.chat_inner.bind("<Configure>", self._on_chat_inner_configure)
         self.chat_canvas.bind("<Configure>", self._on_chat_canvas_configure)
 
+        # Mouse wheel / touchpad scrolling
+        self.chat_canvas.bind("<MouseWheel>", self._on_mouse_wheel)
+        self.chat_canvas.bind("<Button-4>", self._on_mouse_wheel)
+        self.chat_canvas.bind("<Button-5>", self._on_mouse_wheel)
+        # Bind to inner frame too so scrolling works over bubbles
+        self.chat_inner.bind("<MouseWheel>", self._on_mouse_wheel)
+        self.chat_inner.bind("<Button-4>", self._on_mouse_wheel)
+        self.chat_inner.bind("<Button-5>", self._on_mouse_wheel)
+
         # Track bubbles for layout
         self._chat_bubbles = []
         self._bubble_count = 0
@@ -429,11 +438,18 @@ class PortalWindow:
         """Adjust inner frame width to match canvas width."""
         self.chat_canvas.itemconfig(self.chat_inner_window, width=event.width)
 
+    def _on_mouse_wheel(self, event):
+        """Handle mouse wheel / touchpad scrolling over chat area."""
+        if event.num == 5 or event.delta < 0:
+            self.chat_canvas.yview_scroll(3, "units")
+        elif event.num == 4 or event.delta > 0:
+            self.chat_canvas.yview_scroll(-3, "units")
+
     # ---- Chat bubbles ----
     def _add_chat_message(self, sender, text, is_atlas=True):
         """Add a chat bubble to the message area."""
         bubble_bg = _CHAT_BUBBLE_ATLAS if is_atlas else _CHAT_BUBBLE_USER
-        name_color = _ACCENT if is_atlas else "#5b9bd5"
+        name_color = _ACCENT if is_atlas else "#c8a8e8"
         name_label = "Atlas" if is_atlas else "You"
 
         # Container for this bubble (full width row)
@@ -441,11 +457,14 @@ class PortalWindow:
         row.pack(fill="x", padx=8, pady=(6, 2))
 
         if is_atlas:
-            # Atlas messages: left-aligned
-            bubble = tk.Frame(row, bg=bubble_bg, padx=12, pady=8)
+            # Atlas messages: left-aligned, black with purple border
+            bubble = tk.Frame(row, bg=bubble_bg, padx=12, pady=8,
+                              highlightthickness=1,
+                              highlightbackground=_CHAT_BORDER,
+                              highlightcolor=_CHAT_BORDER)
             bubble.pack(side="left", anchor="w")
         else:
-            # User messages: right-aligned
+            # User messages: right-aligned, dark purple
             bubble = tk.Frame(row, bg=bubble_bg, padx=12, pady=8)
             bubble.pack(side="right", anchor="e")
 
