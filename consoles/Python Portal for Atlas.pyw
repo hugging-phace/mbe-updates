@@ -400,9 +400,14 @@ def _take_screenshot(output_path):
     """Capture the primary screen and save to output_path (PNG)."""
     system = platform.system()
     if system == "Windows":
+        # Set DPI awareness so scaled displays (125%, 150%, etc.) capture the
+        # full physical resolution instead of scaled-down logical coordinates.
         ps = (
             'Add-Type -AssemblyName System.Windows.Forms; '
             'Add-Type -AssemblyName System.Drawing; '
+            'Add-Type -Name Dpi -Namespace User32 -MemberDefinition '
+            '"[DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware();"; '
+            '[User32.Dpi]::SetProcessDPIAware() | Out-Null; '
             '$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; '
             '$bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height; '
             '$graphics = [System.Drawing.Graphics]::FromImage($bitmap); '
