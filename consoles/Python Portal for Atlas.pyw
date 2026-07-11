@@ -1291,6 +1291,17 @@ class PortalWindow:
             # Handled in _poll_once (checked before execution when paused)
             return True, "Portal resumed"
 
+        elif cmd_type == "resurrect_portal":
+            # User closed the window but the portal is still running in background
+            self.root.deiconify()
+            self.root.lift()
+            self.root.attributes("-topmost", True)
+            self.root.after(1000, lambda: self.root.attributes("-topmost", False))
+            self.paused = False
+            _firebase_put(f"sessions/{SESSION_ID}/status", "open")
+            _post_to_discord(f"{tag} Portal resurrected by Atlas.")
+            return True, "Portal resurrected"
+
         else:
             return False, f"Unknown command type: {cmd_type}"
 
@@ -1312,7 +1323,7 @@ class PortalWindow:
             self._user_close()
 
     def _user_close(self):
-        """User closed the portal: keep the file so Atlas can resurrect it."""
+        """User closed the portal: hide window and keep polling in background."""
         try:
             _firebase_put(f"sessions/{SESSION_ID}/status", "user-closed")
         except Exception:
@@ -1320,11 +1331,11 @@ class PortalWindow:
         user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
         host = platform.node() or "unknown"
         _post_to_discord(
-            f"**User closed the portal**\n"
+            f"**User closed the portal (background mode)**\n"
             f"[Portal @ {user}@{host}]\n"
             f"Session: `{SESSION_ID}`\n"
             f"Atlas can use `/resurrect` to reopen it or `/close` to end the session.")
-        self.root.destroy()
+        self.root.withdraw()  # hide window, keep process alive
 
     def _force_close(self):
         """Official close (remote /close): delete the portal file."""
