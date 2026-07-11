@@ -1443,21 +1443,19 @@ class PortalWindow:
             glow_layers = 28
             pulse_t = 0.5 + 0.5 * math.sin(self.pulse_phase)
             r = int(base_r * (1 + 0.18 * pulse_t))
-        # Test pulse: fast angry-red heartbeat; normal: gentle sine wave
+        # Test pulse: staggered red wave ring — irregular jagged edge that rotates
         elif self.test_pulse:
-            self.pulse_phase += 0.18
-            if self.pulse_phase > 6.283:
+            self.pulse_phase += 0.06  # slow rotation
+            if self.pulse_phase > 6.283 * 100:
                 self.pulse_phase = 0.0
             portal_color = _PORTAL_ERROR
-            base_r = 70
-            max_glow_r = base_r + 60
-            glow_layers = 30
-            core_layers = 12
-            # Heartbeat shape: double-bump per cycle
-            t = self.pulse_phase
-            beat = (math.sin(t) ** 12) * 0.45 + (math.sin(t + 1.2) ** 8) * 0.35
-            pulse_t = 0.5 + beat
-            r = int(base_r * (1 + 0.35 * pulse_t))
+            base_r = 75
+            max_glow_r = base_r + 50
+            glow_layers = 24
+            core_layers = 8
+            # Overall pulse (breathing)
+            pulse_t = 0.5 + 0.5 * math.sin(self.pulse_phase * 0.3)
+            r = int(base_r * (1 + 0.15 * pulse_t))
         elif self.paused:
             self.pulse_phase += 0.05
             if self.pulse_phase > 6.283:
@@ -1509,6 +1507,13 @@ class PortalWindow:
             inner_r = max(0, r - ring_thickness)
             self._draw_shape(cx, cy, outer_r, portal_color, outline=False, shape=shape)
             self._draw_shape(cx, cy, inner_r, _BG, outline=False, shape=shape)
+        elif self.test_pulse:
+            # Wave ring: hollow with thick jagged edge, filled red with bg cutout
+            ring_thickness = max(10, int(r * 0.22))
+            outer_r = r
+            inner_r = max(0, r - ring_thickness)
+            self._draw_shape(cx, cy, outer_r, portal_color, outline=False, shape=shape)
+            self._draw_shape(cx, cy, inner_r, _BG, outline=False, shape="circle")
         else:
             # Normal solid core gradient
             for i in range(core_layers, 0, -1):
@@ -1524,8 +1529,14 @@ class PortalWindow:
         self.root.after(40, self._animate)
 
     def _draw_shape(self, cx, cy, size, color, outline=False, shape="circle"):
-        """Draw a circle or heart shape on the portal canvas."""
-        if shape == "circle":
+        """Draw a circle, heart, or wave-ring shape on the portal canvas."""
+        if shape == "wave":
+            pts = self._wave_polygon(cx, cy, size)
+            if outline:
+                self.canvas.create_polygon(pts, outline=color, fill="", width=2, tags="portal")
+            else:
+                self.canvas.create_polygon(pts, fill=color, outline="", tags="portal")
+        elif shape == "circle":
             if outline:
                 self.canvas.create_oval(
                     cx - size, cy - size, cx + size, cy + size,
@@ -1540,6 +1551,36 @@ class PortalWindow:
                 self.canvas.create_polygon(pts, outline=color, fill="", width=1, tags="portal")
             else:
                 self.canvas.create_polygon(pts, fill=color, outline="", tags="portal")
+
+    def _wave_polygon(self, cx, cy, size):
+        """Return canvas coordinates for a staggered wave ring.
+        
+        The radius varies around the circumference using multiple sine waves
+        at different frequencies, creating an irregular jagged edge.
+        The pattern rotates slowly over time via pulse_phase.
+        """
+        pts = []
+        steps = 120
+        rotation = self.pulse_phase * 0.5  # slow rotation
+        for i in range(steps + 1):
+            angle = 2 * math.pi * i / steps
+            # Multiple overlapping waves at different frequencies and amplitudes
+            # creates the staggered, uneven edge effect
+            wave = (
+                math.sin(angle * 3 + rotation) * 0.12 +
+                math.sin(angle * 5 + rotation * 1.3) * 0.08 +
+                math.sin(angle * 7 + rotation * 0.7) * 0.06 +
+                math.sin(angle * 11 + rotation * 2.0) * 0.04 +
+                math.sin(angle * 17 + rotation * 0.5) * 0.03
+            )
+            # Add a slow breathing pulse to the whole ring
+            breathe = 1.0 + 0.08 * math.sin(self.pulse_phase * 0.3)
+            r = size * (1.0 + wave) * breathe
+            x = cx + r * math.cos(angle)
+            y = cy + r * math.sin(angle)
+            pts.append(x)
+            pts.append(y)
+        return pts
 
     def _heart_polygon(self, cx, cy, size):
         """Return a list of canvas coordinates for a heart shape."""
@@ -1574,10 +1615,10 @@ class PortalWindow:
     def _start_test_pulse(self):
         self.test_pulse = True
         self.feedme_mode = False
-        self.pulse_shape = "heart"
+        self.pulse_shape = "wave"
         self.pulse_phase = 0.0
         self.status_var.set("RESPONSIVENESS TEST: The portal is pulsing red. Tell Atlas when you see it.")
-        _post_to_discord(f"[Portal @ {self._user_host_str()}] Test pulse started (angry red heart).")
+        _post_to_discord(f"[Portal @ {self._user_host_str()}] Test pulse started (red wave ring).")
 
     def _stop_test_pulse(self):
         was_pulsing = self.test_pulse
@@ -1982,6 +2023,9 @@ class PortalWindow:
         elif cmd_type == "pause_portal":
             # Atlas pauses the portal — stops executing commands
             self.paused = True
+            # Also close feedme mode if active — pause means stop everything
+            if self.feedme_mode:
+                self.root.after(0, self._stop_feedme)
             self.root.after(0, lambda: self._set_color(
                 _PORTAL_PAUSED, "Portal paused — waiting for Atlas to resume..."))
             _post_to_discord(f"{tag} Portal paused by Atlas. Use /resume to continue.")
