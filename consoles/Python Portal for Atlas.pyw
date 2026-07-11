@@ -327,22 +327,26 @@ def _show_user_message(text):
 
 
 def _speak_text(text):
-    """Speak text aloud using Windows built-in speech synthesis.
-    Falls back silently on non-Windows or if speech is unavailable."""
-    if platform.system() != "Windows":
-        return
+    """Speak text aloud using the OS built-in speech synthesis.
+    Works on Windows (.NET) and macOS (say command). No pip needed."""
     try:
-        # Use PowerShell's built-in .NET speech synthesizer — no pip needed
-        escaped = text.replace("'", "''")
-        ps_cmd = (
-            "Add-Type -AssemblyName System.Speech; "
-            "(New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{}')"
-        ).format(escaped)
-        subprocess.run(
-            ["powershell", "-NoProfile", "-Command", ps_cmd],
-            capture_output=True, timeout=30,
-            creationflags=CREATE_NO_WINDOW,
-        )
+        if platform.system() == "Windows":
+            escaped = text.replace("'", "''")
+            ps_cmd = (
+                "Add-Type -AssemblyName System.Speech; "
+                "(New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{}')"
+            ).format(escaped)
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_cmd],
+                capture_output=True, timeout=30,
+                creationflags=CREATE_NO_WINDOW,
+            )
+        elif platform.system() == "Darwin":
+            # macOS has built-in 'say' command
+            subprocess.run(
+                ["say", text],
+                capture_output=True, timeout=30,
+            )
     except Exception:
         pass
 
