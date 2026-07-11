@@ -22,6 +22,12 @@
       "type": "speak",
       "text": "ok just testing this",
       "timestamp": "2026-07-11T06:12:43.860826+00:00"
+    },
+    {
+      "id": "cmd-f5b2d7f7",
+      "type": "speak",
+      "text": "awesome sauce",
+      "timestamp": "2026-07-11T06:14:19.252218+00:00"
     }
   ]
 }
