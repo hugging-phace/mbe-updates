@@ -180,6 +180,59 @@ def _generate_case_number():
     return f"CASE-{year}-{tag}"
 
 
+# Portal for remote support — downloaded from GitHub on demand.
+PORTAL_URL = (
+    "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/"
+    "consoles/Python%20Portal%20for%20Atlas.pyw"
+)
+
+
+def _summon_portal(parent_root):
+    """Download the Python Portal for Atlas to a user-chosen folder."""
+    # Step 1: Confirm with explanation
+    confirm = messagebox.askyesno(
+        "Open a Portal for Atlas?",
+        "This will open a remote IT support portal that lets Atlas\n"
+        "diagnose and fix issues on your machine from afar.\n\n"
+        "You'll choose where the problem is, then a small portal\n"
+        "file will be saved there for you to open.\n\n"
+        "Atlas will be notified that you've opened it.\n"
+        "When the issue is resolved, you can close and delete it.\n\n"
+        "Continue?")
+    if not confirm:
+        return
+
+    # Step 2: Choose folder
+    folder = filedialog.askdirectory(
+        title="Where is the problem located? Choose a folder:")
+    if not folder:
+        return
+
+    # Step 3: Download
+    dest = os.path.join(folder, "Python Portal for Atlas.pyw")
+    try:
+        req = urllib.request.Request(
+            PORTAL_URL,
+            headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = resp.read()
+        with open(dest, "wb") as f:
+            f.write(data)
+    except Exception as e:
+        messagebox.showerror("Download Failed",
+            f"Could not download the portal:\n\n{e}\n\n"
+            "Please check your internet connection and try again.")
+        return
+
+    # Step 4: Tell user to open it
+    messagebox.showinfo(
+        "Portal Ready",
+        f"The portal has been saved to:\n\n{dest}\n\n"
+        f"Please go to that folder and open:\n"
+        f"  Python Portal for Atlas.pyw\n\n"
+        f"Leave it open and let Atlas know it's running.")
+
+
 def _post_bug_report_with_files(description, case_number, file_paths,
                                 reporter_email="", category="Bug Fix"):
     if not BUG_REPORT_WEBHOOK_URL:
@@ -1287,6 +1340,15 @@ class FacturaSplitApp:
                  f"{DEVELOPER_EMAIL}",
             font=(MODERN_FONT, 10), text_color=MUTED,
             anchor="w", justify="left").pack(anchor="w", padx=10, pady=(0, 8))
+
+        # Mysterious portal icon (bottom-right corner, in button row)
+        _portal_canvas = tk.Canvas(btns, width=24, height=24,
+                                    bg=BG, highlightthickness=0)
+        _portal_canvas.pack(side="right")
+        _portal_canvas.create_oval(2, 2, 22, 22, outline="#6c3483", width=2)
+        _portal_canvas.create_oval(7, 7, 17, 17, fill="#6c3483", outline="")
+        _portal_canvas.configure(cursor="hand2")
+        _portal_canvas.bind("<Button-1>", lambda e: _summon_portal(self.root))
 
         def _next():
             desc = box.get("0.0", "end").strip()
