@@ -19,6 +19,7 @@ open when Atlas sends a message.  User can reply back to Discord.
 Speech can be muted from the chat sidebar.
 """
 
+import ctypes
 import json
 import os
 import platform
@@ -29,6 +30,8 @@ import threading
 import time
 import urllib.request
 import uuid
+import zlib
+import struct
 from datetime import datetime
 from pathlib import Path
 
@@ -396,54 +399,120 @@ def _download_file(url, dest_path):
         return False, f"Download failed: {e}"
 
 
-def _take_screenshot(output_path):
-    """Capture the primary screen and save to output_path (PNG)."""
+def _write_png_rgb(output_path, rgb_bytes, width, height):
+    """Write raw RGB24 bytes to a PNG file using only stdlib zlib."""
+    raw = bytearray()
+    stride = width * 3
+    for y in range(height):
+        raw.append(0)  # no filter
+        raw.extend(rgb_bytes[y * stride:(y + 1) * stride])
+    compressed = zlib.compress(bytes(raw))
+
+    def _chunk(tag, data):
+        chunk = struct.pack(">I", len(data)) + tag + data
+        crc = zlib.crc32(chunk[4:]) & 0xffffffff
+        return chunk + struct.pack(">I", crc)
+
+    with open(output_path, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n")
+        f.write(_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)))
+        f.write(_chunk(b"IDAT", compressed))
+        f.write(_chunk(b"IEND", b""))
+
+
+def _capture_hbitmap_to_png(hdc_mem, hbitmap, width, height, output_path):
+    """Extract a Windows HBITMAP (24-bit BGR top-down) and save as PNG."""
+    from ctypes import wintypes
+    gdi32 = ctypes.windll.gdi32
+
+    class BITMAPINFOHEADER(ctypes.Structure):
+        _fields_ = [
+            ("biSize", wintypes.DWORD),
+            ("biWidth", wintypes.LONG),
+            ("biHeight", wintypes.LONG),
+            ("biPlanes", wintypes.WORD),
+            ("biBitCount", wintypes.WORD),
+            ("biCompression", wintypes.DWORD),
+            ("biSizeImage", wintypes.DWORD),
+            ("biXPelsPerMeter", wintypes.LONG),
+            ("biYPelsPerMeter", wintypes.LONG),
+            ("biClrUsed", wintypes.DWORD),
+            ("biClrImportant", wintypes.DWORD),
+        ]
+
+    class BITMAPINFO(ctypes.Structure):
+        _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", wintypes.DWORD * 1)]
+
+    bih = BITMAPINFOHEADER()
+    bih.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+    bih.biWidth = width
+    bih.biHeight = -height  # negative = top-down
+    bih.biPlanes = 1
+    bih.biBitCount = 24
+    bih.biCompression = 0
+    bih.biSizeImage = 0
+
+    bi = BITMAPINFO()
+    bi.bmiHeader = bih
+
+    buffer_size = width * height * 3
+    buffer = (ctypes.c_ubyte * buffer_size)()
+    gdi32.GetDIBits(hdc_mem, hbitmap, 0, height, buffer, ctypes.byref(bi), 0)
+
+    # Windows gives BGR; PNG wants RGB
+    data = bytearray(buffer)
+    for i in range(0, len(data), 3):
+        data[i], data[i + 2] = data[i + 2], data[i]
+
+    _write_png_rgb(output_path, bytes(data), width, height)
+
+
+def _take_screenshot(output_path, hwnd=0):
+    """Capture the primary screen (hwnd=0) or a specific window and save to output_path (PNG)."""
     system = platform.system()
     if system == "Windows":
-        # Use the Win32 API directly so DPI/scaling doesn't cause partial captures.
-        ps = (
-            'Add-Type -TypeDefinition @"\n'
-            'using System;\n'
-            'using System.Drawing;\n'
-            'using System.Drawing.Imaging;\n'
-            'using System.Runtime.InteropServices;\n'
-            'public class ScreenShot {\n'
-            '    [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr hwnd);\n'
-            '    [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);\n'
-            '    [DllImport("gdi32.dll")] static extern bool BitBlt(IntPtr hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, IntPtr hdcSrc, int nXSrc, int nYSrc, int dwRop);\n'
-            '    [DllImport("user32.dll")] static extern int GetSystemMetrics(int nIndex);\n'
-            '    [DllImport("user32.dll")] static extern bool SetProcessDPIAware();\n'
-            '    const int SRCCOPY = 0x00CC0020;\n'
-            '    public static void Capture(string path) {\n'
-            '        SetProcessDPIAware();\n'
-            '        int w = GetSystemMetrics(0);\n'
-            '        int h = GetSystemMetrics(1);\n'
-            '        using (Bitmap bmp = new Bitmap(w, h)) {\n'
-            '            using (Graphics g = Graphics.FromImage(bmp)) {\n'
-            '                IntPtr hdc = GetDC(IntPtr.Zero);\n'
-            '                IntPtr gdc = g.GetHdc();\n'
-            '                BitBlt(gdc, 0, 0, w, h, hdc, 0, 0, SRCCOPY);\n'
-            '                g.ReleaseHdc(gdc);\n'
-            '                ReleaseDC(IntPtr.Zero, hdc);\n'
-            '            }\n'
-            f'            bmp.Save(@"{output_path}", ImageFormat.Png);\n'
-            '        }\n'
-            '    }\n'
-            '}\n'
-            '"@ -ReferencedAssemblies System.Drawing; '
-            f'[ScreenShot]::Capture("{output_path}");'
-        )
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        gdi32 = ctypes.windll.gdi32
         try:
-            proc = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", ps],
-                capture_output=True, text=True,
-                creationflags=CREATE_NO_WINDOW, timeout=30)
-            if proc.returncode != 0:
-                return False, f"Screenshot failed: {proc.stderr.strip()}"
+            user32.SetProcessDPIAware()
+        except Exception:
+            pass
+        try:
+            if hwnd:
+                # Window-specific capture
+                hdc_window = user32.GetDC(hwnd)
+                rect = wintypes.RECT()
+                user32.GetWindowRect(hwnd, ctypes.byref(rect))
+                w = rect.right - rect.left
+                h = rect.bottom - rect.top
+                if w <= 0 or h <= 0:
+                    return False, "Invalid window size"
+            else:
+                hdc_window = user32.GetDC(0)
+                w = user32.GetSystemMetrics(0)
+                h = user32.GetSystemMetrics(1)
+            hdc_mem = gdi32.CreateCompatibleDC(hdc_window)
+            hbitmap = gdi32.CreateCompatibleBitmap(hdc_window, w, h)
+            gdi32.SelectObject(hdc_mem, hbitmap)
+            SRCCOPY = 0x00CC0020
+            if hwnd:
+                # Use PrintWindow to capture window content including non-client area
+                PW_RENDERFULLCONTENT = 0x00000002
+                if not user32.PrintWindow(hwnd, hdc_mem, PW_RENDERFULLCONTENT):
+                    user32.PrintWindow(hwnd, hdc_mem, 0)
+            else:
+                gdi32.BitBlt(hdc_mem, 0, 0, w, h, hdc_window, 0, 0, SRCCOPY)
+            _capture_hbitmap_to_png(hdc_mem, hbitmap, w, h, output_path)
+            gdi32.DeleteObject(hbitmap)
+            gdi32.DeleteDC(hdc_mem)
+            user32.ReleaseDC(hwnd, hdc_window)
             return True, output_path
         except Exception as e:
             return False, f"Screenshot error: {e}"
     elif system == "Darwin":
+        if hwnd:
+            return False, "Window-specific screenshot not supported on Mac"
         try:
             proc = subprocess.run(
                 ["/usr/sbin/screencapture", "-x", output_path],
@@ -455,6 +524,73 @@ def _take_screenshot(output_path):
             return False, f"Screenshot error: {e}"
     else:
         return False, f"Screenshot unsupported on {system}"
+
+
+def _list_visible_windows():
+    """Return a list of (hwnd, title) for visible top-level windows."""
+    if platform.system() != "Windows":
+        return []
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    windows = []
+    EnumWindowsProc = ctypes.WINFUNCTYPE(
+        wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def callback(hwnd, _extra):
+        if user32.IsWindowVisible(hwnd):
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length > 0:
+                buf = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buf, length + 1)
+                title = buf.value
+                rect = wintypes.RECT()
+                user32.GetWindowRect(hwnd, ctypes.byref(rect))
+                if rect.right - rect.left > 0 and rect.bottom - rect.top > 0:
+                    windows.append((hwnd, title))
+        return True
+
+    user32.EnumWindows(EnumWindowsProc(callback), 0)
+    return windows
+
+
+def _capture_all_windows(tag):
+    """Capture each visible window and post it to Discord. Returns (ok, message)."""
+    import tempfile
+    if platform.system() != "Windows":
+        return False, "Window-specific capture only supported on Windows"
+
+    windows = _list_visible_windows()
+    if not windows:
+        return False, "No visible windows found"
+
+    posted = 0
+    failed = []
+    for hwnd, title in windows:
+        try:
+            fd, path = tempfile.mkstemp(suffix=".png", prefix="win_")
+            os.close(fd)
+            ok, msg = _take_screenshot(path, hwnd=hwnd)
+            if ok and Path(path).exists():
+                safe_title = title.replace("`", "'")[:60] or "Untitled"
+                _post_file_to_discord(f"{tag} Window: {safe_title}", path)
+                posted += 1
+                try:
+                    Path(path).unlink()
+                except Exception:
+                    pass
+            else:
+                failed.append(f"{title[:40]}: {msg}")
+                try:
+                    Path(path).unlink()
+                except Exception:
+                    pass
+        except Exception as e:
+            failed.append(f"{title[:40]}: {e}")
+    summary = f"Captured {posted} window(s)"
+    if failed:
+        summary += f", {len(failed)} failed"
+    _post_to_discord(f"{tag} {summary}")
+    return True, summary
 
 
 def _pip_install(packages):
@@ -1504,6 +1640,10 @@ class PortalWindow:
             self.root.after(0, self._ask_screenshot)
             return True, "Screenshot permission requested"
 
+        elif cmd_type == "snap_windows":
+            self.root.after(0, self._ask_snap_windows)
+            return True, "Window screenshot permission requested"
+
         else:
             return False, f"Unknown command type: {cmd_type}"
 
@@ -1582,9 +1722,77 @@ class PortalWindow:
         sh = dialog.winfo_screenheight()
         dialog.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
 
+    def _ask_snap_windows(self):
+        """Show a local allow/deny dialog and capture each visible window if allowed."""
+        import tempfile
+        from tkinter import Toplevel, Label, Button, Frame
+
+        user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
+        host = platform.node() or "unknown"
+        tag = f"[Portal @ {user}@{host}]"
+
+        dialog = Toplevel(self.root)
+        dialog.title("Atlas: Window Screenshots")
+        dialog.resizable(False, False)
+        dialog.attributes("-topmost", True)
+        dialog.configure(bg="#2b2b2b")
+        Label(
+            dialog, text="Atlas wants a screenshot of each open window.",
+            bg="#2b2b2b", fg="white", font=("Segoe UI", 11),
+            wraplength=320, justify="center"
+        ).pack(padx=20, pady=(20, 10))
+        Label(
+            dialog, text="The portal window will be hidden before capturing.",
+            bg="#2b2b2b", fg="#aaaaaa", font=("Segoe UI", 9),
+            wraplength=320, justify="center"
+        ).pack(padx=20, pady=(0, 20))
+
+        def _on_deny():
+            dialog.destroy()
+            _post_to_discord(f"{tag} Window screenshots denied by user.")
+
+        def _on_allow():
+            dialog.destroy()
+            was_withdrawn = not self.root.winfo_viewable()
+            self.root.withdraw()
+            self.root.after(500, lambda: _do_capture(was_withdrawn))
+
+        def _do_capture(was_withdrawn):
+            try:
+                ok, msg = _capture_all_windows(tag)
+                if not ok:
+                    _post_to_discord(f"{tag} Window screenshots failed: {msg}")
+            except Exception as e:
+                _post_to_discord(f"{tag} Window screenshots error: {e}")
+            finally:
+                if not was_withdrawn:
+                    self.root.deiconify()
+                    self.root.lift()
+
+        button_row = Frame(dialog, bg="#2b2b2b")
+        button_row.pack(padx=20, pady=(0, 20))
+        Button(
+            button_row, text="Deny", command=_on_deny,
+            bg="#555555", fg="white", activebackground="#666666",
+            font=("Segoe UI", 10, "bold"), width=10
+        ).pack(side="left", padx=10)
+        Button(
+            button_row, text="Allow", command=_on_allow,
+            bg="#4a9eff", fg="white", activebackground="#6ab2ff",
+            font=("Segoe UI", 10, "bold"), width=10
+        ).pack(side="left", padx=10)
+
+        dialog.update_idletasks()
+        w = dialog.winfo_width()
+        h = dialog.winfo_height()
+        sw = dialog.winfo_screenwidth()
+        sh = dialog.winfo_screenheight()
+        dialog.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
+
     def _close(self):
         """User clicked the X button — show a custom confirmation dialog.
-        First close hides the portal (resurrectable). Second close is permanent."""
+        First close offers hide, fully close, or cancel.
+        Second close is permanent."""
         if self.user_closed_once:
             result = self._ask_yes_no(
                 "Close Portal?",
@@ -1593,12 +1801,14 @@ class PortalWindow:
             if result:
                 self._final_user_close()
         else:
-            result = self._ask_yes_no(
+            choice = self._ask_three_way(
                 "Close Portal?",
-                "Are you sure you want to close the portal?\n\n"
-                "Atlas will only have a limited time to restore the session.")
-            if result:
+                "What would you like to do?",
+                "Hide", "Fully Close", "Cancel")
+            if choice == "hide":
                 self._user_close()
+            elif choice == "fully_close":
+                self._final_user_close()
 
     def _ask_yes_no(self, title, message):
         """Custom modal yes/no dialog centered over the portal window."""
@@ -1649,6 +1859,51 @@ class PortalWindow:
                relief="flat", cursor="hand2").pack(side="left", padx=6)
 
         # Center dialog over root and wait
+        self.root.wait_window(dialog)
+        return result["value"]
+
+    def _ask_three_way(self, title, message, btn1, btn2, btn3):
+        """Custom modal three-button dialog centered over the portal window.
+        Returns one of: 'btn1', 'btn2', 'btn3' (lowercased, spaces to underscores)."""
+        from tkinter import Toplevel, Label, Button, Frame
+        dialog = Toplevel(self.root)
+        dialog.title(title)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        dialog.configure(bg=_BG)
+
+        width, height = 400, 180
+        root_x = self.root.winfo_x()
+        root_y = self.root.winfo_y()
+        root_w = self.root.winfo_width()
+        root_h = self.root.winfo_height()
+        x = root_x + (root_w - width) // 2
+        y = root_y + (root_h - height) // 2
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+
+        Label(dialog, text=title, font=("Segoe UI", 11, "bold"),
+              bg=_BG, fg=_TEXT).pack(pady=(16, 8), padx=16)
+        Label(dialog, text=message, font=("Segoe UI", 9),
+              bg=_BG, fg=_TEXT, justify="center").pack(padx=16)
+
+        result = {"value": None}
+
+        def make_cb(val):
+            def cb():
+                result["value"] = val
+                dialog.destroy()
+            return cb
+
+        btn_frame = Frame(dialog, bg=_BG)
+        btn_frame.pack(pady=(16, 12))
+        for text, val in [(btn1, btn1.lower().replace(" ", "_")),
+                          (btn2, btn2.lower().replace(" ", "_")),
+                          (btn3, btn3.lower().replace(" ", "_"))]:
+            Button(btn_frame, text=text, command=make_cb(val), width=10,
+                   bg=_PANEL, fg=_TEXT, activebackground="#2a2a45",
+                   relief="flat", cursor="hand2").pack(side="left", padx=6)
+
         self.root.wait_window(dialog)
         return result["value"]
 
