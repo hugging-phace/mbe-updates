@@ -226,8 +226,9 @@ def _write_temp(text):
 # Portal UI — pulsing circle + chat sidebar
 # ------------------------------------------------------------------
 class PortalWindow:
-    def __init__(self, root):
+    def __init__(self, root, portal_folder=None):
         self.root = root
+        self.portal_folder = portal_folder
         self.portal_dir = Path(__file__).parent
         self.executed_file = self.portal_dir / ".portal_executed.json"
         self.executed_ids = self._load_executed()
@@ -782,9 +783,9 @@ class PortalWindow:
                 if not self.paused:
                     self.root.after(0, lambda: self._set_color(
                         _PORTAL_ERROR, f"Poll error: {e}"))
-            # When paused, poll every 5 minutes (saves Firebase reads)
+            # When paused, poll every 2 minutes (saves Firebase reads)
             # When active, poll every 1.5 seconds
-            interval = 300 if self.paused else POLL_INTERVAL
+            interval = 120 if self.paused else POLL_INTERVAL
             time.sleep(interval)
 
     # ---- Reminder loop — nag Atlas every 25 min if portal still open ----
@@ -933,7 +934,11 @@ class PortalWindow:
         tag = f"[Portal @ {user}@{host}]"
 
         if cmd_type == "scan":
-            path = cmd.get("path", str(Path.home()))
+            raw_path = cmd.get("path", ".")
+            if raw_path == "." and self.portal_folder:
+                path = self.portal_folder
+            else:
+                path = raw_path
             result = _scan_directory(path)
             _post_file_to_discord(f"{tag} Scan result for: {path}", _write_temp(result))
             return True, result
@@ -1075,6 +1080,7 @@ class PortalWindow:
 
 
 if __name__ == "__main__":
+    PORTAL_FOLDER = str(Path(__file__).parent)
     try:
         user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
         host = platform.node() or "unknown"
@@ -1083,10 +1089,10 @@ if __name__ == "__main__":
             f"User: {user}@{host}\n"
             f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
             f"Python: {platform.python_version()}\n"
-            f"Folder: {Path(__file__).parent}")
+            f"Folder: {PORTAL_FOLDER}")
     except Exception:
         pass
 
     root = tk.Tk()
-    PortalWindow(root)
+    PortalWindow(root, portal_folder=PORTAL_FOLDER)
     root.mainloop()
