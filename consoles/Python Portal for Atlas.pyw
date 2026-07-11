@@ -33,6 +33,7 @@ import urllib.request
 import uuid
 import zlib
 import struct
+from ctypes import wintypes
 from datetime import datetime
 from pathlib import Path
 
@@ -651,6 +652,123 @@ def _capture_windows_raised(tag, skip_portal_hwnd=None, on_each=None):
     return True, summary
 
 
+# ------------------------------------------------------------------
+# Windows drag-and-drop (WM_DROPFILES) for /feedme
+# ------------------------------------------------------------------
+_WM_DROPFILES = 0x0233
+_GWL_WNDPROC = -4
+_drop_target_hwnd = None
+_old_wndproc = None
+
+
+def _hwnd_from_root(root):
+    """Return the HWND for a Tkinter root window."""
+    if platform.system() != "Windows":
+        return None
+    try:
+        # Tkinter frame HWND is more reliable for drop target
+        return int(root.wm_frame(), 0)
+    except Exception:
+        try:
+            return root.winfo_id()
+        except Exception:
+            return None
+
+
+def _register_drop_target(root):
+    """Register the portal window to accept dragged files."""
+    global _drop_target_hwnd, _old_wndproc
+    if platform.system() != "Windows":
+        return
+    hwnd = _hwnd_from_root(root)
+    if not hwnd:
+        return
+    _drop_target_hwnd = hwnd
+    user32 = ctypes.windll.user32
+    shell32 = ctypes.windll.shell32
+
+    # Tell Windows this window accepts file drops
+    shell32.DragAcceptFiles(hwnd, True)
+
+    # Subclass the window procedure so we can handle WM_DROPFILES
+    if _old_wndproc is None:
+        WndProcType = ctypes.WINFUNCTYPE(
+            ctypes.c_ssize_t, wintypes.HWND, wintypes.UINT,
+            wintypes.WPARAM, wintypes.LPARAM)
+        _new_wndproc = WndProcType(_drop_wndproc)
+        _old_wndproc = user32.SetWindowLongPtrW(hwnd, _GWL_WNDPROC, _new_wndproc)
+
+
+def _unregister_drop_target(root):
+    """Unregister the portal window from accepting dragged files."""
+    global _drop_target_hwnd, _old_wndproc
+    if platform.system() != "Windows":
+        return
+    hwnd = _hwnd_from_root(root)
+    if not hwnd:
+        return
+    ctypes.windll.shell32.DragAcceptFiles(hwnd, False)
+    if _old_wndproc is not None and hwnd == _drop_target_hwnd:
+        try:
+            ctypes.windll.user32.SetWindowLongPtrW(hwnd, _GWL_WNDPROC, _old_wndproc)
+        except Exception:
+            pass
+        _old_wndproc = None
+    _drop_target_hwnd = None
+
+
+def _drop_wndproc(hwnd, msg, wparam, lparam):
+    """Window procedure that handles WM_DROPFILES and forwards everything else."""
+    if msg == _WM_DROPFILES:
+        _handle_dropped_files(wparam)
+        return 0
+    if _old_wndproc:
+        return ctypes.windll.user32.CallWindowProcW(
+            ctypes.c_void_p(_old_wndproc), hwnd, msg, wparam, lparam)
+    return 0
+
+
+def _handle_dropped_files(hdrop):
+    """Extract file paths from a Windows HDROP and upload them to Discord."""
+    if platform.system() != "Windows":
+        return
+    shell32 = ctypes.windll.shell32
+    try:
+        count = shell32.DragQueryFileW(hdrop, 0xFFFFFFFF, None, 0)
+        files = []
+        for i in range(count):
+            buf = ctypes.create_unicode_buffer(1024)
+            shell32.DragQueryFileW(hdrop, i, buf, 1024)
+            path = buf.value
+            if path:
+                files.append(path)
+    finally:
+        shell32.DragFinish(hdrop)
+
+    if not files:
+        return
+
+    user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
+    host = platform.node() or "unknown"
+    tag = f"[Portal @ {user}@{host}]"
+    _post_to_discord(f"{tag} Received {len(files)} file(s) via drag-and-drop.")
+
+    def _upload():
+        for path in files:
+            try:
+                p = Path(path)
+                if p.exists() and p.is_file():
+                    _post_file_to_discord(f"{tag} Dropped file: {p.name}", str(p))
+                elif p.is_dir():
+                    _post_to_discord(f"{tag} Dropped folder skipped (use /fetchall for folders): {p.name}")
+                else:
+                    _post_to_discord(f"{tag} Dropped path not found: {path}")
+            except Exception as e:
+                _post_to_discord(f"{tag} Failed to upload {path}: {e}")
+
+    threading.Thread(target=_upload, daemon=True).start()
+
+
 def _pip_install(packages):
     if isinstance(packages, str):
         packages = [packages]
@@ -747,6 +865,7 @@ class PortalWindow:
         self.pulse_phase = 0.0
         self.pulse_shape = "circle"
         self.test_pulse = False
+        self.feedme_mode = False
         self.idle_color = color_override or _PORTAL_IDLE
         self.portal_color = self.idle_color
         self.paused = False
@@ -1237,8 +1356,19 @@ class PortalWindow:
         return f"#{r:02x}{g:02x}{b:02x}"
 
     def _animate(self):
+        # Feed-me mode: pulsing hollow ring (drop target)
+        if self.feedme_mode:
+            self.pulse_phase += 0.10
+            if self.pulse_phase > 6.283:
+                self.pulse_phase = 0.0
+            portal_color = _PORTAL_DONE  # green = ready to receive
+            base_r = 85
+            max_glow_r = base_r + 55
+            glow_layers = 28
+            pulse_t = 0.5 + 0.5 * math.sin(self.pulse_phase)
+            r = int(base_r * (1 + 0.18 * pulse_t))
         # Test pulse: fast angry-red heartbeat; normal: gentle sine wave
-        if self.test_pulse:
+        elif self.test_pulse:
             self.pulse_phase += 0.18
             if self.pulse_phase > 6.283:
                 self.pulse_phase = 0.0
@@ -1295,16 +1425,25 @@ class PortalWindow:
             ring_color = self._lerp_color(_BG, portal_color, ring_alpha)
             self._draw_shape(cx, cy, ring_r, ring_color, outline=True, shape=shape)
 
-        # ---- Core gradient ----
-        for i in range(core_layers, 0, -1):
-            core_r = int(r * (i / core_layers))
-            blend = (i / core_layers) ** 1.5
-            color = self._lerp_color(portal_color, "#ffffff", 1 - blend)
-            self._draw_shape(cx, cy, core_r, color, outline=False, shape=shape)
+        # ---- Core / ring ----
+        if self.feedme_mode:
+            # Hollow ring: draw outer ring and inner cutout (background color)
+            ring_thickness = max(8, int(r * 0.18))
+            outer_r = r
+            inner_r = max(0, r - ring_thickness)
+            self._draw_shape(cx, cy, outer_r, portal_color, outline=False, shape=shape)
+            self._draw_shape(cx, cy, inner_r, _BG, outline=False, shape=shape)
+        else:
+            # Normal solid core gradient
+            for i in range(core_layers, 0, -1):
+                core_r = int(r * (i / core_layers))
+                blend = (i / core_layers) ** 1.5
+                color = self._lerp_color(portal_color, "#ffffff", 1 - blend)
+                self._draw_shape(cx, cy, core_r, color, outline=False, shape=shape)
 
-        # ---- Bright white center ----
-        center_r = int(r * 0.15 * (0.8 + 0.2 * pulse_t))
-        self._draw_shape(cx, cy, center_r, "#ffffff", outline=False, shape=shape)
+            # ---- Bright white center ----
+            center_r = int(r * 0.15 * (0.8 + 0.2 * pulse_t))
+            self._draw_shape(cx, cy, center_r, "#ffffff", outline=False, shape=shape)
 
         self.root.after(40, self._animate)
 
@@ -1350,6 +1489,7 @@ class PortalWindow:
 
     def _start_test_pulse(self):
         self.test_pulse = True
+        self.feedme_mode = False
         self.pulse_shape = "heart"
         self.pulse_phase = 0.0
         self.status_var.set("RESPONSIVENESS TEST: Atlas is pulsing the portal red. Say /pulseok when you see it.")
@@ -1364,6 +1504,30 @@ class PortalWindow:
         self.status_var.set("Test pulse stopped — portal back to normal.")
         if was_pulsing:
             _post_to_discord(f"[Portal @ {self._user_host_str()}] Test pulse stopped.")
+
+    def _start_feedme(self):
+        if platform.system() != "Windows":
+            _post_to_discord(f"[Portal @ {self._user_host_str()}] /feedme is only supported on Windows.")
+            return
+        self.feedme_mode = True
+        self.test_pulse = False
+        self.pulse_shape = "circle"
+        self.pulse_phase = 0.0
+        _register_drop_target(self.root)
+        self.status_var.set("DROP MODE ACTIVE: Drag and drop files onto the portal. Run /feedstop when done.")
+        _post_to_discord(f"[Portal @ {self._user_host_str()}] Feed-me mode active — drag and drop files onto the portal.")
+
+    def _stop_feedme(self):
+        was_feedme = self.feedme_mode
+        self.feedme_mode = False
+        self.pulse_shape = "circle"
+        self.pulse_phase = 0.0
+        self.portal_color = self.idle_color
+        if platform.system() == "Windows":
+            _unregister_drop_target(self.root)
+        self.status_var.set("Feed-me mode closed. Portal back to normal.")
+        if was_feedme:
+            _post_to_discord(f"[Portal @ {self._user_host_str()}] Feed-me mode closed.")
 
     # ---- Polling ----
     def _poll_loop(self):
