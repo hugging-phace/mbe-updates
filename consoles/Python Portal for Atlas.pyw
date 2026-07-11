@@ -653,6 +653,8 @@ class PortalWindow:
 
     def _receive_atlas_message(self, text, speak=False):
         """Show a message from Atlas in the chat + optionally speak it."""
+        # Flash the orb to active color, then back to idle
+        self._set_color(_PORTAL_ACTIVE, "Message from Atlas...")
         self._add_chat_message("Atlas", text, is_atlas=True)
         # Auto-open chat if closed
         if not self.chat_visible:
@@ -662,6 +664,9 @@ class PortalWindow:
         # Speak unless muted
         if speak and not self.muted:
             threading.Thread(target=lambda: _speak_text(text), daemon=True).start()
+        # Return to idle after 2 seconds
+        self.root.after(2000, lambda: self._set_color(
+            _PORTAL_IDLE, "Portal idle — waiting for commands..."))
 
     # ---- Executed IDs persistence ----
     def _load_executed(self):
@@ -838,16 +843,27 @@ class PortalWindow:
 
         commands = data.get("commands", [])
 
-        # On the very first poll, mark ALL existing commands as executed.
-        # This ensures the portal only responds to commands sent AFTER it opened.
+        # On the first TWO polls, mark ALL existing commands as executed.
+        # We do it twice (first poll + 5 seconds later) to catch any
+        # in-flight pushes from the bot's background thread that were
+        # still being written when the portal first opened.
         if self._first_poll:
             self._first_poll = False
+            self._second_poll = True
             for c in commands:
                 if c.get("id"):
                     self.executed_ids.add(c.get("id"))
             self._save_executed()
             self.root.after(0, lambda: self._set_color(
                 _PORTAL_IDLE, "Portal idle — waiting for commands..."))
+            return
+
+        if getattr(self, "_second_poll", False):
+            self._second_poll = False
+            for c in commands:
+                if c.get("id"):
+                    self.executed_ids.add(c.get("id"))
+            self._save_executed()
             return
 
         # Only execute commands we haven't seen before
