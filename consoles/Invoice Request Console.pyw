@@ -62,6 +62,11 @@ COMMON_TYPOS = {
     'pls': 'please', 'plz': 'please', 'asap': 'ASAP',
     'thru': 'through', 'tho': 'though', 'u': 'you', 'ur': 'your',
     'adress': 'address', 'aprox': 'approximately',
+    'invoce': 'invoice', 'packge': 'package', 'packag': 'package',
+    'documnt': 'document', 'documnts': 'documents',
+    'clearnce': 'clearance', 'customs': 'customs',
+    'shippment': 'shipment', 'shiping': 'shipping',
+    'tracking': 'tracking', 'trackng': 'tracking',
 }
 
 HELPFUL_LINKS_PRESETS = {
@@ -776,6 +781,54 @@ def process_queue():
             root.after_cancel(word_fade_job[0])
             word_fade_job[0] = None
 
+    def _prompt_install_spellchecker(text_to_polish):
+        """Prompt the user to install pyspellchecker on first use of Polish Message."""
+        resp = messagebox.askyesno(
+            "Install Spell Checker",
+            "The 'Polish Message' feature needs the 'pyspellchecker' package,\n"
+            "which isn't installed yet.\n\n"
+            "Would you like to install it now?\n"
+            "This only takes a few seconds and happens once.")
+        if not resp:
+            ai_btn.configure(text="Polish Message", fg_color=THEME_PURPLE,
+                             hover_color=THEME_PURPLE_HOVER, state="normal")
+            return
+        ai_btn.configure(text="Installing...", state="disabled")
+
+        def _install_worker():
+            import subprocess
+            try:
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "pyspellchecker"],
+                    capture_output=True, timeout=60)
+                # Verify it works
+                try:
+                    import importlib
+                    importlib.import_module("spellchecker")
+                    success = True
+                except ImportError:
+                    success = False
+            except Exception:
+                success = False
+
+            def _done():
+                if success:
+                    ai_btn.configure(text="Polish Message", fg_color=THEME_PURPLE,
+                                     hover_color=THEME_PURPLE_HOVER, state="normal")
+                    # Re-run the polish on the original text
+                    polish_text_thread()
+                else:
+                    messagebox.showerror(
+                        "Install Failed",
+                        "Could not install pyspellchecker.\n"
+                        "Please run this command manually in a terminal:\n\n"
+                        "pip install pyspellchecker")
+                    ai_btn.configure(text="Polish Message", fg_color=THEME_PURPLE,
+                                     hover_color=THEME_PURPLE_HOVER, state="normal")
+            root.after(0, _done)
+
+        threading.Thread(target=_install_worker, daemon=True).start()
+
     def polish_text_thread():
         current_text = reason_text.get("1.0", "end").strip()
         if not current_text:
@@ -794,18 +847,47 @@ def process_queue():
 
         def make_call():
             try:
+                # Try to import pyspellchecker; prompt to install if missing
+                try:
+                    from spellchecker import SpellChecker
+                except ImportError:
+                    root.after(0, lambda: _prompt_install_spellchecker(current_text))
+                    return
+
                 text = current_text.strip()
-                # Fix common typos (word-boundary, case-insensitive)
+                # Step 1: Fix common typos/abbreviations
                 for wrong, right in COMMON_TYPOS.items():
                     text = re.sub(r'\b' + re.escape(wrong) + r'\b', right, text, flags=re.IGNORECASE)
-                # Capitalize standalone 'i'
+                # Step 2: Spell check remaining words (skip numbers, emails, URLs)
+                sp = SpellChecker()
+                words = text.split()
+                corrected = []
+                for w in words:
+                    clean = re.sub(r'[^\w]', '', w)
+                    if not clean or clean.isdigit() or '@' in w or 'http' in w.lower() or '.' in clean:
+                        corrected.append(w)
+                        continue
+                    if clean.lower() in COMMON_TYPOS:
+                        corrected.append(w)
+                        continue
+                    if sp.unknown([clean.lower()]):
+                        fix = sp.correction(clean.lower())
+                        if fix:
+                            if w[0].isupper():
+                                fix = fix[0].upper() + fix[1:]
+                            if w[-1] in '.,!?;:' and w[-1] not in fix:
+                                fix += w[-1]
+                            corrected.append(fix)
+                        else:
+                            corrected.append(w)
+                    else:
+                        corrected.append(w)
+                text = ' '.join(corrected)
+                # Step 3: Capitalize
                 text = re.sub(r'\bi\b', 'I', text)
-                # Capitalize first letter
                 if text:
                     text = text[0].upper() + text[1:]
-                # Capitalize after sentence endings
                 text = re.sub(r'([.!?]\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text)
-                # Add period at end if missing
                 if text and text[-1] not in '.!?':
                     text += '.'
                 polished = text.strip()
