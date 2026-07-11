@@ -467,8 +467,9 @@ def _capture_hbitmap_to_png(hdc_mem, hbitmap, width, height, output_path):
     _write_png_rgb(output_path, bytes(data), width, height)
 
 
-def _take_screenshot(output_path, hwnd=0):
-    """Capture the primary screen (hwnd=0) or a specific window and save to output_path (PNG)."""
+def _take_screenshot(output_path, window_rect=None):
+    """Capture the primary screen (window_rect=None) or a specific window region and save to output_path (PNG).
+    For window capture, pass window_rect as (left, top, right, bottom) to BitBlt from the screen."""
     system = platform.system()
     if system == "Windows":
         from ctypes import wintypes
@@ -479,39 +480,32 @@ def _take_screenshot(output_path, hwnd=0):
         except Exception:
             pass
         try:
-            if hwnd:
-                # Window-specific capture
-                hdc_window = user32.GetDC(hwnd)
-                rect = wintypes.RECT()
-                user32.GetWindowRect(hwnd, ctypes.byref(rect))
-                w = rect.right - rect.left
-                h = rect.bottom - rect.top
-                if w <= 0 or h <= 0:
-                    return False, "Invalid window size"
+            hdc_screen = user32.GetDC(0)
+            if window_rect:
+                left, top, right, bottom = window_rect
+                w = right - left
+                h = bottom - top
+                src_x, src_y = left, top
             else:
-                hdc_window = user32.GetDC(0)
                 w = user32.GetSystemMetrics(0)
                 h = user32.GetSystemMetrics(1)
-            hdc_mem = gdi32.CreateCompatibleDC(hdc_window)
-            hbitmap = gdi32.CreateCompatibleBitmap(hdc_window, w, h)
+                src_x, src_y = 0, 0
+            if w <= 0 or h <= 0:
+                return False, "Invalid capture size"
+            hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
+            hbitmap = gdi32.CreateCompatibleBitmap(hdc_screen, w, h)
             gdi32.SelectObject(hdc_mem, hbitmap)
             SRCCOPY = 0x00CC0020
-            if hwnd:
-                # Use PrintWindow to capture window content including non-client area
-                PW_RENDERFULLCONTENT = 0x00000002
-                if not user32.PrintWindow(hwnd, hdc_mem, PW_RENDERFULLCONTENT):
-                    user32.PrintWindow(hwnd, hdc_mem, 0)
-            else:
-                gdi32.BitBlt(hdc_mem, 0, 0, w, h, hdc_window, 0, 0, SRCCOPY)
+            gdi32.BitBlt(hdc_mem, 0, 0, w, h, hdc_screen, src_x, src_y, SRCCOPY)
             _capture_hbitmap_to_png(hdc_mem, hbitmap, w, h, output_path)
             gdi32.DeleteObject(hbitmap)
             gdi32.DeleteDC(hdc_mem)
-            user32.ReleaseDC(hwnd, hdc_window)
+            user32.ReleaseDC(0, hdc_screen)
             return True, output_path
         except Exception as e:
             return False, f"Screenshot error: {e}"
     elif system == "Darwin":
-        if hwnd:
+        if window_rect:
             return False, "Window-specific screenshot not supported on Mac"
         try:
             proc = subprocess.run(
@@ -527,7 +521,7 @@ def _take_screenshot(output_path, hwnd=0):
 
 
 def _list_visible_windows():
-    """Return a list of (hwnd, title) for visible top-level windows."""
+    """Return a list of (hwnd, title, rect) for visible top-level windows."""
     if platform.system() != "Windows":
         return []
     from ctypes import wintypes
@@ -537,7 +531,7 @@ def _list_visible_windows():
         wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
     def callback(hwnd, _extra):
-        if user32.IsWindowVisible(hwnd):
+        if user32.IsWindowVisible(hwnd) and not user32.IsIconic(hwnd):
             length = user32.GetWindowTextLengthW(hwnd)
             if length > 0:
                 buf = ctypes.create_unicode_buffer(length + 1)
@@ -545,15 +539,17 @@ def _list_visible_windows():
                 title = buf.value
                 rect = wintypes.RECT()
                 user32.GetWindowRect(hwnd, ctypes.byref(rect))
-                if rect.right - rect.left > 0 and rect.bottom - rect.top > 0:
-                    windows.append((hwnd, title))
+                w = rect.right - rect.left
+                h = rect.bottom - rect.top
+                if w > 50 and h > 50:
+                    windows.append((hwnd, title, (rect.left, rect.top, rect.right, rect.bottom)))
         return True
 
     user32.EnumWindows(EnumWindowsProc(callback), 0)
     return windows
 
 
-def _capture_all_windows(tag):
+def _capture_all_windows(tag, skip_portal_hwnd=None):
     """Capture each visible window and post it to Discord. Returns (ok, message)."""
     import tempfile
     if platform.system() != "Windows":
@@ -565,11 +561,13 @@ def _capture_all_windows(tag):
 
     posted = 0
     failed = []
-    for hwnd, title in windows:
+    for hwnd, title, rect in windows:
+        if skip_portal_hwnd and hwnd == skip_portal_hwnd:
+            continue
         try:
             fd, path = tempfile.mkstemp(suffix=".png", prefix="win_")
             os.close(fd)
-            ok, msg = _take_screenshot(path, hwnd=hwnd)
+            ok, msg = _take_screenshot(path, window_rect=rect)
             if ok and Path(path).exists():
                 safe_title = title.replace("`", "'")[:60] or "Untitled"
                 _post_file_to_discord(f"{tag} Window: {safe_title}", path)
@@ -1709,13 +1707,21 @@ class PortalWindow:
                     _post_to_discord(f"{tag} Screenshot failed: {msg}")
                 # Per-window shots if requested
                 if capture_windows:
-                    _capture_all_windows(tag)
+                    try:
+                        portal_hwnd = int(self.root.wm_frame(), 0)
+                    except Exception:
+                        portal_hwnd = None
+                    _capture_all_windows(tag, skip_portal_hwnd=portal_hwnd)
             except Exception as e:
                 _post_to_discord(f"{tag} Screenshot error: {e}")
             finally:
                 if not was_withdrawn:
-                    self.root.deiconify()
-                    self.root.lift()
+                    self.root.after(0, lambda: (
+                        self.root.deiconify(),
+                        self.root.lift(),
+                        self.root.attributes("-topmost", True),
+                        self.root.after(500, lambda: self.root.attributes("-topmost", False))
+                    ))
 
         button_row = Frame(dialog, bg="#2b2b2b")
         button_row.pack(padx=20, pady=(0, 20))
@@ -1775,15 +1781,23 @@ class PortalWindow:
 
         def _do_capture(was_withdrawn):
             try:
-                ok, msg = _capture_all_windows(tag)
+                try:
+                    portal_hwnd = int(self.root.wm_frame(), 0)
+                except Exception:
+                    portal_hwnd = None
+                ok, msg = _capture_all_windows(tag, skip_portal_hwnd=portal_hwnd)
                 if not ok:
                     _post_to_discord(f"{tag} Window screenshots failed: {msg}")
             except Exception as e:
                 _post_to_discord(f"{tag} Window screenshots error: {e}")
             finally:
                 if not was_withdrawn:
-                    self.root.deiconify()
-                    self.root.lift()
+                    self.root.after(0, lambda: (
+                        self.root.deiconify(),
+                        self.root.lift(),
+                        self.root.attributes("-topmost", True),
+                        self.root.after(500, lambda: self.root.attributes("-topmost", False))
+                    ))
 
         button_row = Frame(dialog, bg="#2b2b2b")
         button_row.pack(padx=20, pady=(0, 20))
