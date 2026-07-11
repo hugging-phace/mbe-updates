@@ -1016,14 +1016,19 @@ class PortalWindow:
             cmd_id = cmd.get("id")
             try:
                 ok, result = self._execute_command(cmd)
-                color = _PORTAL_DONE if ok else _PORTAL_ERROR
-                status = f"Command '{cmd.get('type')}' {'done' if ok else 'failed'}"
+                # Don't override paused/resumed state with "done" status
+                if self.paused and cmd.get("type") == "pause_portal":
+                    pass  # paused color/status already set by _execute_command
+                else:
+                    color = _PORTAL_DONE if ok else _PORTAL_ERROR
+                    status = f"Command '{cmd.get('type')}' {'done' if ok else 'failed'}"
+                    self.root.after(0, lambda c=color, s=status: self._set_color(c, s))
             except Exception as e:
                 color = _PORTAL_ERROR
                 status = f"Command error: {e}"
                 ok = False
+                self.root.after(0, lambda c=color, s=status: self._set_color(c, s))
 
-            self.root.after(0, lambda c=color, s=status: self._set_color(c, s))
             time.sleep(1)
 
             self.executed_ids.add(cmd_id)
