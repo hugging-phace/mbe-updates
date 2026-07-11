@@ -283,7 +283,7 @@ class PortalWindow:
         self.chat_visible = False
 
         # Window — wider to accommodate chat sidebar
-        root.title("Python Portal for Atlas")
+        root.title(f"Python Portal for Atlas v{PORTAL_VERSION}")
         root.geometry("400x400")
         root.resizable(False, False)
         root.configure(bg=_BG)
@@ -763,44 +763,51 @@ class PortalWindow:
 
         self.canvas.delete("portal")
         cx, cy = 200, 160
-        base_r = 80
 
-        # Smooth pulse using sine wave
+        # Force amber color + special styling while paused
         import math
-        pulse_t = 0.5 + 0.5 * math.sin(self.pulse_phase)
-        r = int(base_r * (1 + 0.12 * pulse_t))
+        if self.paused:
+            base_r = 55
+            max_glow_r = base_r + 85
+            glow_layers = 38
+            core_layers = 8
+            portal_color = _PORTAL_PAUSED
+            pulse_t = 0.5 + 0.5 * math.sin(self.pulse_phase)
+            r = int(base_r * (1 + 0.08 * pulse_t))
+        else:
+            base_r = 80
+            max_glow_r = base_r + 50
+            glow_layers = 30
+            core_layers = 12
+            portal_color = self.portal_color
+            pulse_t = 0.5 + 0.5 * math.sin(self.pulse_phase)
+            r = int(base_r * (1 + 0.12 * pulse_t))
 
         # ---- Outer glow halo (many concentric circles fading outward) ----
-        # Simulates a radial gradient / blur effect
-        glow_layers = 30
-        max_glow_r = r + 50
         for i in range(glow_layers, 0, -1):
             layer_r = r + int((max_glow_r - r) * (i / glow_layers))
-            # Fade from portal color at center to background at edge
-            alpha = (1 - (i / glow_layers)) ** 2 * 0.4  # quadratic falloff
-            color = self._lerp_color(_BG, self.portal_color, alpha)
+            alpha = (1 - (i / glow_layers)) ** 2 * 0.4
+            color = self._lerp_color(_BG, portal_color, alpha)
             self.canvas.create_oval(
                 cx - layer_r, cy - layer_r, cx + layer_r, cy + layer_r,
                 fill=color, outline="", tags="portal")
 
-        # ---- Expanding pulse rings (subtle, wave-like) ----
+        # ---- Expanding pulse rings ----
         for i in range(3):
             wave = (self.pulse_phase + i * 2.0) % 6.283
             progress = wave / 6.283
             ring_r = r + int(40 * progress)
             ring_alpha = (1 - progress) * 0.5
-            ring_color = self._lerp_color(_BG, self.portal_color, ring_alpha)
+            ring_color = self._lerp_color(_BG, portal_color, ring_alpha)
             self.canvas.create_oval(
                 cx - ring_r, cy - ring_r, cx + ring_r, cy + ring_r,
                 outline=ring_color, width=1, tags="portal")
 
-        # ---- Core glow (bright center fading to color) ----
-        # Inner gradient: white core -> portal color
-        core_layers = 12
+        # ---- Core gradient (bright center fading to color) ----
         for i in range(core_layers, 0, -1):
             core_r = int(r * (i / core_layers))
-            blend = (i / core_layers) ** 1.5  # more white in center
-            color = self._lerp_color(self.portal_color, "#ffffff", 1 - blend)
+            blend = (i / core_layers) ** 1.5
+            color = self._lerp_color(portal_color, "#ffffff", 1 - blend)
             self.canvas.create_oval(
                 cx - core_r, cy - core_r, cx + core_r, cy + core_r,
                 fill=color, outline="", tags="portal")
