@@ -37,7 +37,7 @@ from tkinter import font as tkfont
 # ------------------------------------------------------------------
 # Config
 # ------------------------------------------------------------------
-PORTAL_VERSION = "2.0.0"
+PORTAL_VERSION = "2.1.0"
 WEBHOOK_URL = (
     "https://discord.com/api/webhooks/1524620703259951104/"
     "fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
@@ -200,7 +200,7 @@ def _mark_session_closed():
 # Command execution
 # ------------------------------------------------------------------
 def _scan_directory(path):
-    """Scan a directory and show it as a branch map with surroundings."""
+    """Scan the current directory and show files + subfolders."""
     lines = []
     p = Path(path)
     if not p.exists():
@@ -208,22 +208,10 @@ def _scan_directory(path):
 
     lines.append(f"Scanned: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     lines.append("")
-
-    # ---- Show location in the file system ----
-    lines.append(f"Portal folder: {p}")
+    lines.append(f"Contents of: {p}")
     if p.parent.exists():
-        lines.append(f"Parent folder: {p.parent}")
+        lines.append(f"Parent: {p.parent}")
     lines.append("")
-
-    # ---- Show sibling folders (nearby branches) ----
-    if p.parent.exists():
-        siblings = sorted([d for d in p.parent.iterdir() if d.is_dir()])
-        if siblings:
-            lines.append("Nearby folders (same parent):")
-            for sib in siblings:
-                marker = " ⬅ YOU ARE HERE" if sib.resolve() == p.resolve() else ""
-                lines.append(f"  {sib.name}/{marker}")
-            lines.append("")
 
     # ---- Show subfolders (children) ----
     subdirs = sorted([d for d in p.iterdir() if d.is_dir()])
@@ -264,6 +252,17 @@ def _scan_directory(path):
             lines.append(f"  {sub.name}/ → (empty)")
     if len(subdirs) > 10:
         lines.append(f"  ... and {len(subdirs) - 10} more subfolders")
+
+    # ---- Nearby folders (compact) — so the bot can cache them for autocomplete ----
+    if p.parent.exists():
+        siblings = sorted([d for d in p.parent.iterdir() if d.is_dir()])
+        if siblings:
+            lines.append("")
+            lines.append("Quick options (nearby folders):")
+            for sib in siblings[:15]:
+                lines.append(f"  {sib.resolve()}/")
+            if len(siblings) > 15:
+                lines.append(f"  ... and {len(siblings) - 15} more")
 
     return "\n".join(lines)
 
@@ -369,20 +368,13 @@ def _zip_directory(path, output_path=None):
 
 
 def _simple_list_files(path):
-    """Return a simple flat list of files in the directory, plus nearby branches."""
+    """Return a simple flat list of files in the current directory."""
     p = Path(path)
     if not p.exists() or not p.is_dir():
         return f"Path does not exist: {path}"
     lines = [f"Files in: {p}", ""]
-    # Show parent + siblings so user can navigate
     if p.parent.exists():
         lines.append(f"Parent: {p.parent}")
-        sibs = sorted([d for d in p.parent.iterdir() if d.is_dir()])
-        if sibs:
-            lines.append("Nearby folders:")
-            for sib in sibs:
-                marker = " ⬅ YOU ARE HERE" if sib.resolve() == p.resolve() else ""
-                lines.append(f"  {sib.name}/{marker}")
         lines.append("")
     files = sorted([f for f in p.iterdir() if f.is_file()])
     if not files:
@@ -1019,10 +1011,8 @@ class PortalWindow:
             time.sleep(CHAT_POLL_INTERVAL)
 
     def _poll_once(self):
-        """Poll Firebase for commands. Session paths start empty, so we can
-        execute commands immediately instead of skipping the first two polls.
-        A single warm-up poll is still used to mark any pre-existing commands
-        as executed (for safety if the session path is reused)."""
+        """Poll Firebase for commands. Session paths are unique per portal, so
+        commands execute immediately without a warm-up skip."""
         try:
             req = urllib.request.Request(
                 f"{FIREBASE_URL}/sessions/{SESSION_ID}/commands.json",
@@ -1038,19 +1028,6 @@ class PortalWindow:
             return
 
         commands = list(data.values())
-
-        # On the first poll, mark any pre-existing commands as executed.
-        # With session-specific paths this should almost never be needed,
-        # but it protects against a reused session path.
-        if getattr(self, "_first_poll", True):
-            self._first_poll = False
-            for c in commands:
-                if c.get("id"):
-                    self.executed_ids.add(c.get("id"))
-            self._save_executed()
-            self.root.after(0, lambda: self._set_color(
-                self.idle_color, "Portal idle — listening for Atlas' commands..."))
-            return
 
         # Only execute commands we haven't seen before
         new_commands = [
