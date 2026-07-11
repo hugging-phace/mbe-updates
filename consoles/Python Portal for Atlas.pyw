@@ -1210,12 +1210,19 @@ class PortalWindow:
     def _close(self):
         """User clicked the X button — ask for confirmation first."""
         from tkinter import messagebox
-        result = messagebox.askyesno(
-            "Close Portal?",
-            "Are you sure you want to close the portal?\n\n"
-            "This will disconnect from Atlas and delete the portal file.\n"
-            "You can always open another one if needed.",
-            icon="question")
+        try:
+            result = messagebox.askyesno(
+                "Close Portal?",
+                "Are you sure you want to close the portal?\n\n"
+                "This will disconnect from Atlas and delete the portal file.\n"
+                "You can always open another one if needed.",
+                icon="question")
+        except Exception:
+            result = messagebox.askyesno(
+                "Close Portal?",
+                "Are you sure you want to close the portal?\n\n"
+                "This will disconnect from Atlas and delete the portal file.\n"
+                "You can always open another one if needed.")
         if result:
             self._force_close()
 
