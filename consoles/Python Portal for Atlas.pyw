@@ -49,7 +49,7 @@ CREATE_NO_WINDOW = (
 
 # Colours
 _BG = "#0a0a12"
-_PORTAL_IDLE = "#4a0e6e"
+_PORTAL_IDLE = "#9b59b6"
 _PORTAL_ACTIVE = "#00d4ff"
 _PORTAL_DONE = "#22c55e"
 _PORTAL_ERROR = "#ef4444"
@@ -352,9 +352,9 @@ class PortalWindow:
                  wraplength=360).pack(pady=(0, 4))
 
         # Footer note
-        tk.Label(root, text="No longer need this portal? Feel free to close and delete it.",
+        tk.Label(root, text="No longer need this portal? Feel free to close it\n(it will also delete itself — you can always open another).",
                  font=("Segoe UI", 8), bg=_BG, fg=_MUTED,
-                 wraplength=360).pack(side="bottom", pady=(0, 8))
+                 wraplength=360, justify="center").pack(side="bottom", pady=(0, 8))
 
         # Start animation + polling
         self._animate()
@@ -392,40 +392,42 @@ class PortalWindow:
 
     def _animate(self):
         """Pulsing animation loop."""
-        self.pulse_phase += 0.04
+        self.pulse_phase += 0.05
         if self.pulse_phase > 6.283:
             self.pulse_phase = 0.0
 
         self.canvas.delete("portal")
 
         cx, cy = 200, 130
-        base_r = 60
+        base_r = 65
 
-        # Outer rings (fading)
-        for i in range(5):
-            r = base_r + 15 + int(10 * (1 + (self.pulse_phase + i * 0.5) % 6.283 / 6.283))
-            alpha = max(0, 80 - i * 15)
+        # Outer rings (expanding outward, fading) — more prominent
+        for i in range(7):
+            wave = (self.pulse_phase + i * 0.4) % 6.283
+            expansion = int(20 * (1 - wave / 6.283))
+            r = base_r + 20 + expansion
+            alpha = max(0, 120 - i * 18)
             color = self._lerp_color(_BG, self.portal_color, alpha / 255)
             self.canvas.create_oval(
                 cx - r, cy - r, cx + r, cy + r,
                 outline=color, width=2, tags="portal")
 
-        # Main portal circle
-        pulse = 1 + 0.08 * (0.5 + 0.5 * (1 + (-1 ** (int(self.pulse_phase * 10)))))
+        # Main portal circle — bigger pulse swing
+        pulse = 1 + 0.15 * (0.5 + 0.5 * (1 + (-1 ** (int(self.pulse_phase * 10)))))
         r = int(base_r * pulse)
         self.canvas.create_oval(
             cx - r, cy - r, cx + r, cy + r,
             fill=self.portal_color, outline="", tags="portal")
 
-        # Inner glow
-        r2 = int(r * 0.6)
-        glow = self._lerp_color(self.portal_color, "#ffffff", 0.3)
+        # Inner glow — brighter
+        r2 = int(r * 0.65)
+        glow = self._lerp_color(self.portal_color, "#ffffff", 0.45)
         self.canvas.create_oval(
             cx - r2, cy - r2, cx + r2, cy + r2,
             fill=glow, outline="", tags="portal")
 
-        # Core
-        r3 = int(r * 0.25)
+        # Bright core
+        r3 = int(r * 0.3)
         self.canvas.create_oval(
             cx - r3, cy - r3, cx + r3, cy + r3,
             fill="#ffffff", outline="", tags="portal")
@@ -499,7 +501,19 @@ class PortalWindow:
             _PORTAL_IDLE, "Portal idle — waiting for commands..."))
 
     def _close(self):
+        """Close the portal and delete the portal file + cache."""
         self.root.destroy()
+        # Self-delete after the window is destroyed
+        try:
+            portal_path = Path(__file__).resolve()
+            # Delete the executed commands cache
+            if self.executed_file.exists():
+                self.executed_file.unlink()
+            # Delete the portal itself
+            if portal_path.exists():
+                portal_path.unlink()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
