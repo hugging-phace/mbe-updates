@@ -340,6 +340,11 @@ class PortalWindow:
         # Track bubbles for layout
         self._chat_bubbles = []
         self._bubble_count = 0
+        self._welcome_shown = False
+
+        # Welcome screen with stars (drawn on canvas, behind inner frame)
+        self._welcome_items = []
+        self._draw_welcome()
 
         # ---- Floating input box (detached from corners) ----
         self.input_container = tk.Frame(self.chat_frame, bg=_CHAT_BG)
@@ -364,8 +369,15 @@ class PortalWindow:
         self.chat_input.pack(side="left", fill="x", expand=True)
         self.chat_input.bind("<KeyRelease>", self._on_input_change)
         self.chat_input.bind("<Return>", lambda e: self._send_user_message())
-        # Shift+Return for newline (default behaviour, but explicit)
         self.chat_input.bind("<Shift-Return>", lambda e: None)
+
+        # Input placeholder
+        self._input_placeholder = "Type here to message Atlas..."
+        self._input_has_placeholder = True
+        self.chat_input.insert("1.0", self._input_placeholder)
+        self.chat_input.configure(fg=_MUTED)
+        self.chat_input.bind("<FocusIn>", self._on_input_focus_in)
+        self.chat_input.bind("<FocusOut>", self._on_input_focus_out)
 
         # Send button
         send_btn = tk.Button(self.input_wrapper, text="\u279C",
@@ -435,8 +447,17 @@ class PortalWindow:
         self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
 
     def _on_chat_canvas_configure(self, event):
-        """Adjust inner frame width to match canvas width."""
+        """Adjust inner frame width to match canvas width + redraw welcome."""
         self.chat_canvas.itemconfig(self.chat_inner_window, width=event.width)
+        # Redraw welcome screen once canvas has real dimensions
+        if self._welcome_shown and self._bubble_count == 0 and event.width > 1:
+            for item in self._welcome_items:
+                try:
+                    self.chat_canvas.delete(item)
+                except Exception:
+                    pass
+            self._welcome_items = []
+            self._draw_welcome()
 
     def _on_mouse_wheel(self, event):
         """Handle mouse wheel / touchpad scrolling over chat area."""
@@ -445,9 +466,80 @@ class PortalWindow:
         elif event.num == 4 or event.delta > 0:
             self.chat_canvas.yview_scroll(-3, "units")
 
+    # ---- Welcome screen (stars) ----
+    def _draw_welcome(self):
+        """Draw a 'Welcome to Space' placeholder with stars on the chat canvas."""
+        if self._bubble_count > 0:
+            return
+        self._welcome_shown = True
+        w = self.chat_canvas.winfo_width() or 300
+        h = self.chat_canvas.winfo_height() or 250
+
+        # Stars at fixed positions (relative to canvas center)
+        import random
+        random.seed(42)  # consistent star positions
+        stars = []
+        for _ in range(15):
+            sx = random.randint(20, max(40, w - 20))
+            sy = random.randint(20, max(40, h - 60))
+            size = random.choice([1, 1, 1, 2, 2, 3])  # mostly small
+            brightness = random.choice(["#444466", "#555577", "#666688", "#8888aa"])
+            stars.append((sx, sy, size, brightness))
+
+        for sx, sy, size, brightness in stars:
+            item = self.chat_canvas.create_oval(
+                sx - size, sy - size, sx + size, sy + size,
+                fill=brightness, outline="", tags="welcome")
+            self._welcome_items.append(item)
+
+        # "Welcome to Space" text
+        cx = w // 2
+        cy = h // 2 - 20
+        item = self.chat_canvas.create_text(
+            cx, cy, text="Welcome to Space",
+            fill=_ACCENT, font=("Segoe UI", 14, "bold"),
+            tags="welcome")
+        self._welcome_items.append(item)
+
+        item = self.chat_canvas.create_text(
+            cx, cy + 24, text="Atlas will appear here when you're needed.",
+            fill=_MUTED, font=("Segoe UI", 8),
+            tags="welcome")
+        self._welcome_items.append(item)
+
+    def _remove_welcome(self):
+        """Remove the welcome screen when first bubble arrives."""
+        if not self._welcome_shown:
+            return
+        for item in self._welcome_items:
+            try:
+                self.chat_canvas.delete(item)
+            except Exception:
+                pass
+        self.chat_canvas.delete("welcome")
+        self._welcome_items = []
+        self._welcome_shown = False
+
+    # ---- Input placeholder ----
+    def _on_input_focus_in(self, event):
+        if self._input_has_placeholder:
+            self.chat_input.delete("1.0", "end")
+            self.chat_input.configure(fg=_TEXT)
+            self._input_has_placeholder = False
+
+    def _on_input_focus_out(self, event):
+        content = self.chat_input.get("1.0", "end-1c").strip()
+        if not content:
+            self.chat_input.insert("1.0", self._input_placeholder)
+            self.chat_input.configure(fg=_MUTED)
+            self._input_has_placeholder = True
+
     # ---- Chat bubbles ----
     def _add_chat_message(self, sender, text, is_atlas=True):
         """Add a chat bubble to the message area."""
+        # Remove welcome screen on first message
+        if self._bubble_count == 0:
+            self._remove_welcome()
         bubble_bg = _CHAT_BUBBLE_ATLAS if is_atlas else _CHAT_BUBBLE_USER
         name_color = _ACCENT if is_atlas else "#c8a8e8"
         name_label = "Atlas" if is_atlas else "You"
@@ -504,6 +596,8 @@ class PortalWindow:
     def _on_input_change(self, event=None):
         """Auto-grow the input text widget as the user types.
         Counts both explicit newlines AND visual wrap lines."""
+        if self._input_has_placeholder:
+            return  # Don't resize for placeholder
         content = self.chat_input.get("1.0", "end-1c")
         if not content:
             self.chat_input.configure(height=1)
@@ -524,6 +618,8 @@ class PortalWindow:
 
     def _send_user_message(self):
         """Send user's chat message to Discord."""
+        if self._input_has_placeholder:
+            return  # Don't send placeholder text
         msg = self.chat_input.get("1.0", "end-1c").strip()
         if not msg:
             return
