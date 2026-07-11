@@ -659,6 +659,7 @@ _WM_DROPFILES = 0x0233
 _GWL_WNDPROC = -4
 _drop_target_hwnd = None
 _old_wndproc = None
+_new_wndproc_ref = None  # keep ctypes callback alive
 
 
 def _hwnd_from_root(root):
@@ -677,7 +678,7 @@ def _hwnd_from_root(root):
 
 def _register_drop_target(root):
     """Register the portal window to accept dragged files."""
-    global _drop_target_hwnd, _old_wndproc
+    global _drop_target_hwnd, _old_wndproc, _new_wndproc_ref
     if platform.system() != "Windows":
         return
     hwnd = _hwnd_from_root(root)
@@ -695,13 +696,13 @@ def _register_drop_target(root):
         WndProcType = ctypes.WINFUNCTYPE(
             ctypes.c_ssize_t, wintypes.HWND, wintypes.UINT,
             wintypes.WPARAM, wintypes.LPARAM)
-        _new_wndproc = WndProcType(_drop_wndproc)
-        _old_wndproc = user32.SetWindowLongPtrW(hwnd, _GWL_WNDPROC, _new_wndproc)
+        _new_wndproc_ref = WndProcType(_drop_wndproc)
+        _old_wndproc = user32.SetWindowLongPtrW(hwnd, _GWL_WNDPROC, _new_wndproc_ref)
 
 
 def _unregister_drop_target(root):
     """Unregister the portal window from accepting dragged files."""
-    global _drop_target_hwnd, _old_wndproc
+    global _drop_target_hwnd, _old_wndproc, _new_wndproc_ref
     if platform.system() != "Windows":
         return
     hwnd = _hwnd_from_root(root)
@@ -714,17 +715,27 @@ def _unregister_drop_target(root):
         except Exception:
             pass
         _old_wndproc = None
+        _new_wndproc_ref = None
     _drop_target_hwnd = None
 
 
 def _drop_wndproc(hwnd, msg, wparam, lparam):
     """Window procedure that handles WM_DROPFILES and forwards everything else."""
-    if msg == _WM_DROPFILES:
-        _handle_dropped_files(wparam)
-        return 0
-    if _old_wndproc:
-        return ctypes.windll.user32.CallWindowProcW(
-            ctypes.c_void_p(_old_wndproc), hwnd, msg, wparam, lparam)
+    try:
+        if msg == _WM_DROPFILES:
+            _handle_dropped_files(wparam)
+            return 0
+        if _old_wndproc:
+            return ctypes.windll.user32.CallWindowProcW(
+                ctypes.c_void_p(_old_wndproc), hwnd, msg, wparam, lparam)
+    except Exception:
+        # If anything goes wrong in our subclass, fall back to old proc if possible
+        if _old_wndproc:
+            try:
+                return ctypes.windll.user32.CallWindowProcW(
+                    ctypes.c_void_p(_old_wndproc), hwnd, msg, wparam, lparam)
+            except Exception:
+                pass
     return 0
 
 
@@ -1480,7 +1491,15 @@ class PortalWindow:
 
     def _set_color(self, color, status):
         self.portal_color = color
-        self.status_var.set(status)
+        # Don't overwrite mode-specific status messages while in special modes
+        if self.test_pulse:
+            self.status_var.set(
+                "RESPONSIVENESS TEST: Atlas is pulsing the portal red. Say /pulseok when you see it.")
+        elif self.feedme_mode:
+            self.status_var.set(
+                "DROP MODE ACTIVE: Drag and drop files onto the portal. Run /feedstop when done.")
+        else:
+            self.status_var.set(status)
 
     def _user_host_str(self):
         user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
