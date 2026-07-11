@@ -14,6 +14,10 @@
       "id": "cmd-494f02ed",
       "type": "speak",
       "text": "hey there im watching you"
+    },
+    {
+      "id": "cmd-3b367c0a",
+      "type": "scan"
     }
   ]
 }
