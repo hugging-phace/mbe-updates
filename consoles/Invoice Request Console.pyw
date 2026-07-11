@@ -843,18 +843,18 @@ def process_queue():
                 
                 word_fade_job[0] = root.after(80, fade_in_words)
             else:
-                ai_btn.configure(text="Polish with AI", fg_color=THEME_PURPLE, hover_color=THEME_PURPLE_HOVER, state="normal")
+                ai_btn.configure(text="Polish Message", fg_color=THEME_PURPLE, hover_color=THEME_PURPLE_HOVER, state="normal")
         
         fade_in_words()
         
     def handle_ai_failure(error_msg):
-        """Updates the button visually to red reading 'AI Unavailable' on failure."""
+        """Updates the button visually to red reading 'Polish Unavailable' on failure."""
         stop_text_fade()
         reason_text.configure(text_color=DEFAULT_WHITE)
-        
+
         # Turn the button Red and flag it as Unavailable
         ai_btn.configure(text="Polish Unavailable", fg_color="#dc3545", hover_color="#c82333", state="disabled")
-        
+
         def reset_ai_button():
             ai_btn.configure(text="Polish Message", fg_color=THEME_PURPLE, hover_color=THEME_PURPLE_HOVER, state="normal")
             
