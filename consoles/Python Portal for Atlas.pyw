@@ -1941,6 +1941,14 @@ class PortalWindow:
             self.root.after(0, self._stop_test_pulse)
             return True, "Test pulse stopped"
 
+        elif cmd_type == "feedme":
+            self.root.after(0, self._start_feedme)
+            return True, "Feed-me mode started"
+
+        elif cmd_type == "feed_stop":
+            self.root.after(0, self._stop_feedme)
+            return True, "Feed-me mode stopped"
+
         else:
             return False, f"Unknown command type: {cmd_type}"
 
