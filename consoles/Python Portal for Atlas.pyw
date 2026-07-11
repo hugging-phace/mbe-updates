@@ -45,7 +45,7 @@ WEBHOOK_URL = (
     "https://discord.com/api/webhooks/1524620703259951104/"
     "fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
 )
-POLL_INTERVAL = 10  # seconds
+POLL_INTERVAL = 5  # seconds
 REMINDER_INTERVAL = 25 * 60  # 25 minutes in seconds
 CREATE_NO_WINDOW = (
     subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
