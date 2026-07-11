@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
-  "changelog": "Initial version with remote support: bug reporting with file attachments (script auto-attached), Check for Updates, Pull From Manifest file picker, standalone mode preserved.",
+  "version": "2.0.1",
+  "changelog": "Added remote support portal button with pale pink icon.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Invoice%20Request%20Console.pyw"
 }

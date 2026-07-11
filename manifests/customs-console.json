@@ -1,5 +1,5 @@
 {
-  "version": "1.0.4",
-  "changelog": "Added automated error reporting: real errors (caught exceptions) now show a 'Report Issue' button that sends the full traceback to the developer's Discord. Validation messages (e.g. 'No selection') remain plain OK dialogs. Unhandled crashes anywhere in the app are also caught and show the same reportable dialog. Right-click Copy/Select All on error text areas. Also added a progress bar with package names during dependency installation — no more blank screen while pip runs.",
+  "version": "1.0.5",
+  "changelog": "Added remote support portal button with pale blue icon.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Packages%20at%20Customs%20Console.pyw"
 }

@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
-  "changelog": "Major update: After restarting with Restore Progress, the app now auto-opens the window you were in (e.g. Upload Declarations) instead of just showing the launcher, so you don't think you lost everything. Version number now shown in every window's title bar. Clean version reset to 2.0.0. All previous fixes included: color-aware error dialogs with Report Issue button, Discord traceback reporting, Check for Updates button in bug dialog, session restore with 'used' flag for crash survival, word wrapping in changelog box, non-numeric declaration value protection, improved permission error messages.",
+  "version": "2.0.1",
+  "changelog": "Added remote support portal button with pale green icon.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }

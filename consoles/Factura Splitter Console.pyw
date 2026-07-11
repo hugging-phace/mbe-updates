@@ -128,7 +128,7 @@ A4_WIDTH = 595
 # REMOTE SUPPORT — bug reporting + self-update
 # ==============================================================================
 APP_NAME = "Factura Splitter Console"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -152,7 +152,8 @@ def _version_tuple(v):
 
 def _http_get(url, timeout=10):
     req = urllib.request.Request(
-        url, headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
+        url, headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}",
+                     "Cache-Control": "no-cache"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8")
 
@@ -194,6 +195,11 @@ def _summon_portal(parent_root):
         "Open a Portal for Atlas?",
         "This will open a remote IT support portal that lets Atlas\n"
         "diagnose and fix issues on your machine from afar.\n\n"
+        "Peace of mind:\n"
+        "Atlas cannot see your screen or control your mouse.\n"
+        "He can only carry out file-level tasks such as reading\n"
+        "nearby files, adding or replacing files, and running\n"
+        "Python scripts you send.\n\n"
         "You'll choose where the problem is, then a small portal\n"
         "file will be saved there for you to open.\n\n"
         "Atlas will be notified that you've opened it.\n"
@@ -208,12 +214,17 @@ def _summon_portal(parent_root):
     if not folder:
         return
 
-    # Step 3: Download
-    dest = os.path.join(folder, "Python Portal for Atlas.pyw")
+    # Step 3: Download fresh portal with cache-busting (no raw CDN stale content)
+    import time as _time
+    is_mac = platform.system() == "Darwin"
+    ext = ".py" if is_mac else ".pyw"
+    dest = os.path.join(folder, f"Python Portal for Atlas{ext}")
     try:
+        busted_url = f"{PORTAL_URL}?t={int(_time.time())}"
         req = urllib.request.Request(
-            PORTAL_URL,
-            headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
+            busted_url,
+            headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}",
+                     "Cache-Control": "no-cache"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = resp.read()
         with open(dest, "wb") as f:
@@ -226,10 +237,17 @@ def _summon_portal(parent_root):
 
     # Step 4: Launch it automatically
     try:
-        subprocess.Popen(
-            [sys.executable, dest],
-            creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0,
-        )
+        if is_mac:
+            # On Mac, use python3 explicitly and avoid Windows-only flags
+            subprocess.Popen(
+                ["python3", dest, "--color=#a0c4ff"],
+                start_new_session=True,
+            )
+        else:
+            subprocess.Popen(
+                [sys.executable, dest, "--color=#a0c4ff"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
     except Exception as e:
         messagebox.showerror(
             "Could Not Launch",
@@ -1356,8 +1374,8 @@ class FacturaSplitApp:
         _portal_canvas = tk.Canvas(btns, width=24, height=24,
                                     bg=BG, highlightthickness=0)
         _portal_canvas.pack(side="right")
-        _portal_canvas.create_oval(2, 2, 22, 22, outline="#6c3483", width=2)
-        _portal_canvas.create_oval(7, 7, 17, 17, fill="#6c3483", outline="")
+        _portal_canvas.create_oval(2, 2, 22, 22, outline="#a0c4ff", width=2)
+        _portal_canvas.create_oval(7, 7, 17, 17, fill="#a0c4ff", outline="")
         _portal_canvas.configure(cursor="hand2")
         _portal_canvas.bind("<Button-1>", lambda e: _summon_portal(self.root))
 

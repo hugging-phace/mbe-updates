@@ -583,7 +583,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -678,6 +678,87 @@ def _post_to_discord(content):
             return False, f"Server returned status {resp.status}"
     except Exception as e:
         return False, str(e)
+
+
+# Portal for remote support — downloaded from GitHub on demand.
+PORTAL_URL = (
+    "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/"
+    "consoles/Python%20Portal%20for%20Atlas.pyw"
+)
+
+
+def _summon_portal(parent_root):
+    """Download the Python Portal for Atlas to a user-chosen folder."""
+    # Step 1: Confirm with explanation
+    confirm = messagebox.askyesno(
+        "Open a Portal for Atlas?",
+        "This will open a remote IT support portal that lets Atlas\n"
+        "diagnose and fix issues on your machine from afar.\n\n"
+        "Peace of mind:\n"
+        "Atlas cannot see your screen or control your mouse.\n"
+        "He can only carry out file-level tasks such as reading\n"
+        "nearby files, adding or replacing files, and running\n"
+        "Python scripts you send.\n\n"
+        "You'll choose where the problem is, then a small portal\n"
+        "file will be saved there for you to open.\n\n"
+        "Atlas will be notified that you've opened it.\n"
+        "When the issue is resolved, you can close and delete it.\n\n"
+        "Continue?")
+    if not confirm:
+        return
+
+    # Step 2: Choose folder
+    folder = filedialog.askdirectory(
+        title="Where is the problem located? Choose a folder:")
+    if not folder:
+        return
+
+    # Step 3: Download fresh portal with cache-busting (no raw CDN stale content)
+    import time as _time
+    is_mac = platform.system() == "Darwin"
+    ext = ".py" if is_mac else ".pyw"
+    dest = os.path.join(folder, f"Python Portal for Atlas{ext}")
+    try:
+        busted_url = f"{PORTAL_URL}?t={int(_time.time())}"
+        req = urllib.request.Request(
+            busted_url,
+            headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}",
+                     "Cache-Control": "no-cache"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = resp.read()
+        with open(dest, "wb") as f:
+            f.write(data)
+    except Exception as e:
+        messagebox.showerror("Download Failed",
+            f"Could not download the portal:\n\n{e}\n\n"
+            "Please check your internet connection and try again.")
+        return
+
+    # Step 4: Launch it automatically
+    try:
+        if is_mac:
+            # On Mac, use python3 explicitly and avoid Windows-only flags
+            subprocess.Popen(
+                ["python3", dest, "--color=#a0d8a0"],
+                start_new_session=True,
+            )
+        else:
+            subprocess.Popen(
+                [sys.executable, dest, "--color=#a0d8a0"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+    except Exception as e:
+        messagebox.showerror(
+            "Could Not Launch",
+            f"The portal was saved to:\n\n{dest}\n\n"
+            f"But it could not be launched automatically:\n{e}\n\n"
+            f"Please open it manually.")
+        return
+
+    messagebox.showinfo(
+        "Portal Opened",
+        "The portal is now opening.\n\n"
+        "Leave it running and let Atlas know it's open.")
 
 
 # ==============================================================================
@@ -6359,6 +6440,15 @@ class SupportMixin:
             font=(MODERN_FONT, 10), text_color=self._SUP_DLG_INFO_TXT,
             anchor="w", justify="left").pack(
             anchor="w", padx=10, pady=(0, 8))
+
+        # Portal summon icon (remote support) in the button row
+        _portal_canvas = tk.Canvas(btns, width=24, height=24,
+                                    bg=self._SUP_DLG_BG, highlightthickness=0)
+        _portal_canvas.pack(side="right")
+        _portal_canvas.create_oval(2, 2, 22, 22, outline="#a0d8a0", width=2)
+        _portal_canvas.create_oval(7, 7, 17, 17, fill="#a0d8a0", outline="")
+        _portal_canvas.configure(cursor="hand2")
+        _portal_canvas.bind("<Button-1>", lambda e: _summon_portal(self.root))
 
         def _next():
             desc = box.get("0.0", "end").strip()

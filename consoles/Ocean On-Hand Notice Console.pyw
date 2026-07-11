@@ -18,7 +18,7 @@ from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 from email.policy import SMTP
 from email import message_from_bytes
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 import tkinter as tk
 
 # ------------------------------------------------------------------
@@ -6500,7 +6500,7 @@ CLIENT_MARKER_END = "# === CLIENT EMAILS END ==="
 # REMOTE SUPPORT CONSTANTS (bug reporting + self-update)
 # ==============================================================================
 APP_NAME = "Ocean On-Hand Notice Console"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
@@ -6555,6 +6555,87 @@ def _generate_case_number():
     """Generate a human-friendly case number for tracking bug reports."""
     short_uuid = uuid.uuid4().hex[:8].upper()
     return f"OCE-{short_uuid}"
+
+
+# Portal for remote support — downloaded from GitHub on demand.
+PORTAL_URL = (
+    "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/"
+    "consoles/Python%20Portal%20for%20Atlas.pyw"
+)
+
+
+def _summon_portal(parent_root):
+    """Download the Python Portal for Atlas to a user-chosen folder."""
+    # Step 1: Confirm with explanation
+    confirm = messagebox.askyesno(
+        "Open a Portal for Atlas?",
+        "This will open a remote IT support portal that lets Atlas\n"
+        "diagnose and fix issues on your machine from afar.\n\n"
+        "Peace of mind:\n"
+        "Atlas cannot see your screen or control your mouse.\n"
+        "He can only carry out file-level tasks such as reading\n"
+        "nearby files, adding or replacing files, and running\n"
+        "Python scripts you send.\n\n"
+        "You'll choose where the problem is, then a small portal\n"
+        "file will be saved there for you to open.\n\n"
+        "Atlas will be notified that you've opened it.\n"
+        "When the issue is resolved, you can close and delete it.\n\n"
+        "Continue?")
+    if not confirm:
+        return
+
+    # Step 2: Choose folder
+    folder = filedialog.askdirectory(
+        title="Where is the problem located? Choose a folder:")
+    if not folder:
+        return
+
+    # Step 3: Download fresh portal with cache-busting (no raw CDN stale content)
+    import time as _time
+    is_mac = platform.system() == "Darwin"
+    ext = ".py" if is_mac else ".pyw"
+    dest = os.path.join(folder, f"Python Portal for Atlas{ext}")
+    try:
+        busted_url = f"{PORTAL_URL}?t={int(_time.time())}"
+        req = urllib.request.Request(
+            busted_url,
+            headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}",
+                     "Cache-Control": "no-cache"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = resp.read()
+        with open(dest, "wb") as f:
+            f.write(data)
+    except Exception as e:
+        messagebox.showerror("Download Failed",
+            f"Could not download the portal:\n\n{e}\n\n"
+            "Please check your internet connection and try again.")
+        return
+
+    # Step 4: Launch it automatically
+    try:
+        if is_mac:
+            # On Mac, use python3 explicitly and avoid Windows-only flags
+            subprocess.Popen(
+                ["python3", dest, "--color=#a0e8e8"],
+                start_new_session=True,
+            )
+        else:
+            subprocess.Popen(
+                [sys.executable, dest, "--color=#a0e8e8"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+    except Exception as e:
+        messagebox.showerror(
+            "Could Not Launch",
+            f"The portal was saved to:\n\n{dest}\n\n"
+            f"But it could not be launched automatically:\n{e}\n\n"
+            f"Please open it manually.")
+        return
+
+    messagebox.showinfo(
+        "Portal Opened",
+        "The portal is now opening.\n\n"
+        "Leave it running and let Atlas know it's open.")
 
 
 def _post_bug_report_with_files(description, case_number, file_paths, reporter_email="", category="Bug Fix"):
@@ -6785,8 +6866,19 @@ def _report_bug_dialog():
         win.destroy()
         _show_attach_files_dialog(description, reporter_email, category)
 
-    ctk.CTkButton(win, text="Next \u2192", command=go_next, font=(MODERN_FONT, 14, "bold"),
-                  fg_color="#1e90ff", hover_color="#1c7ed6", corner_radius=8, height=38).pack(pady=(5, 20))
+    btn_row = ctk.CTkFrame(win, fg_color="transparent")
+    btn_row.pack(pady=(5, 20))
+    ctk.CTkButton(btn_row, text="Next \u2192", command=go_next, font=(MODERN_FONT, 14, "bold"),
+                  fg_color="#1e90ff", hover_color="#1c7ed6", corner_radius=8, height=38).pack(side="left")
+
+    # Remote support portal icon (bottom-right corner, in button row)
+    _portal_canvas = tk.Canvas(btn_row, width=24, height=24,
+                               bg="#0a1930", highlightthickness=0)
+    _portal_canvas.pack(side="right", padx=(10, 0))
+    _portal_canvas.create_oval(2, 2, 22, 22, outline="#a0e8e8", width=2)
+    _portal_canvas.create_oval(7, 7, 17, 17, fill="#a0e8e8", outline="")
+    _portal_canvas.configure(cursor="hand2")
+    _portal_canvas.bind("<Button-1>", lambda e: _summon_portal(win))
 
 
 def _show_attach_files_dialog(description, reporter_email, category):

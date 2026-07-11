@@ -583,7 +583,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 #   never lost when the code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "Packages at Customs Console"
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 DEVELOPER_NAME = "Atlas Ramoon"
 
 BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
@@ -679,6 +679,87 @@ def _generate_case_number():
     return f"CASE-{year}-{tag}"
 
 
+# Portal for remote support — downloaded from GitHub on demand.
+PORTAL_URL = (
+    "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/"
+    "consoles/Python%20Portal%20for%20Atlas.pyw"
+)
+
+
+def _summon_portal(parent_root):
+    """Download the Python Portal for Atlas to a user-chosen folder."""
+    # Step 1: Confirm with explanation
+    confirm = messagebox.askyesno(
+        "Open a Portal for Atlas?",
+        "This will open a remote IT support portal that lets Atlas\n"
+        "diagnose and fix issues on your machine from afar.\n\n"
+        "Peace of mind:\n"
+        "Atlas cannot see your screen or control your mouse.\n"
+        "He can only carry out file-level tasks such as reading\n"
+        "nearby files, adding or replacing files, and running\n"
+        "Python scripts you send.\n\n"
+        "You'll choose where the problem is, then a small portal\n"
+        "file will be saved there for you to open.\n\n"
+        "Atlas will be notified that you've opened it.\n"
+        "When the issue is resolved, you can close and delete it.\n\n"
+        "Continue?")
+    if not confirm:
+        return
+
+    # Step 2: Choose folder
+    folder = filedialog.askdirectory(
+        title="Where is the problem located? Choose a folder:")
+    if not folder:
+        return
+
+    # Step 3: Download fresh portal with cache-busting (no raw CDN stale content)
+    import time as _time
+    is_mac = platform.system() == "Darwin"
+    ext = ".py" if is_mac else ".pyw"
+    dest = os.path.join(folder, f"Python Portal for Atlas{ext}")
+    try:
+        busted_url = f"{PORTAL_URL}?t={int(_time.time())}"
+        req = urllib.request.Request(
+            busted_url,
+            headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}",
+                     "Cache-Control": "no-cache"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = resp.read()
+        with open(dest, "wb") as f:
+            f.write(data)
+    except Exception as e:
+        messagebox.showerror("Download Failed",
+            f"Could not download the portal:\n\n{e}\n\n"
+            "Please check your internet connection and try again.")
+        return
+
+    # Step 4: Launch it automatically
+    try:
+        if is_mac:
+            # On Mac, use python3 explicitly and avoid Windows-only flags
+            subprocess.Popen(
+                ["python3", dest, "--color=#a0c4ff"],
+                start_new_session=True,
+            )
+        else:
+            subprocess.Popen(
+                [sys.executable, dest, "--color=#a0c4ff"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+    except Exception as e:
+        messagebox.showerror(
+            "Could Not Launch",
+            f"The portal was saved to:\n\n{dest}\n\n"
+            f"But it could not be launched automatically:\n{e}\n\n"
+            f"Please open it manually.")
+        return
+
+    messagebox.showinfo(
+        "Portal Opened",
+        "The portal is now opening.\n\n"
+        "Leave it running and let Atlas know it's open.")
+
+
 def _post_bug_report_with_files(description, case_number, file_paths,
                                 reporter_email="", category="Bug Fix"):
     """POST a bug report to Discord with optional file attachments in ONE message.
@@ -769,23 +850,6 @@ def _check_for_update():
     return None
 
 
-# ------------------------------------------------------------------
-# Self-update with local-data preservation.
-#
-# Update contract: the public GitHub copy of this script MUST ship with
-# an EMPTY data block (CUSTOMS_DATA = []) so no customer information is
-# ever published. Each user's live data lives ONLY in their local .pyw.
-#
-# On update we download the fresh GitHub version, re-read THIS running
-# file to extract the local CUSTOMS_DATA block, and splice that local
-# block back into the downloaded text via _splice_block() before the
-# atomic os.replace(). That is what makes updates "splice local data in,
-# never overwrite user entries."
-#
-# DO NOT remove the _splice_block() call or the local-block extraction,
-# and DO NOT rename the CUSTOMS_DATA marker (see _DATA_BLOCK_PATTERN).
-# Doing either would wipe every user's entries on the next update.
-# ------------------------------------------------------------------
 def _download_and_apply_update(new_url):
     try:
         new_text = _http_get(new_url, timeout=30)
@@ -803,22 +867,7 @@ def _download_and_apply_update(new_url):
         return False, str(e)
 
 # ------------------------------------------------------------------
-# Embedded data — saved inside this script file (no external Excel).
-#
-# CUSTOMS_DATA holds the LIVE user data written by the running app
-# (see _save_to_excel, which rewrites this block in place). It is the
-# block that _download_and_apply_update preserves via _splice_block.
-#
-# The public GitHub copy of this file MUST keep this exactly empty:
-#     CUSTOMS_DATA = []
-# so customer package data is never published. Local machines populate
-# it at runtime; those local entries survive updates because the marker
-# name below is matched by _DATA_BLOCK_PATTERN and spliced back in.
-#
-# Do NOT rename this "CUSTOMS_DATA" marker: it is part of the update
-# contract. Renaming it here without also updating _DATA_BLOCK_PATTERN
-# (and _save_to_excel) will silently wipe every user's entries on the
-# next update.
+# Embedded data — saved inside this script file (no external Excel)
 # ------------------------------------------------------------------
 CUSTOMS_DATA = [
     {"store": "CB", "cby": "3092", "package": "1073614561", "still_add": "Yes", "manifest": "2024-05-30", "dec": "3378538", "reason": "Held", "paid": "Check COLS", "notes": "To  be Assessed #378-07236935 KX909-ABANDON/LOST"},
@@ -2892,6 +2941,15 @@ class CustomsConsole:
             category = cat_var.get()
             dlg.destroy()
             self._show_attach_files_dialog(desc, email, category)
+
+        # Portal summon icon in button row
+        _portal_canvas = tk.Canvas(btns, width=24, height=24,
+                                     bg=BG, highlightthickness=0)
+        _portal_canvas.pack(side="right")
+        _portal_canvas.create_oval(2, 2, 22, 22, outline="#a0c4ff", width=2)
+        _portal_canvas.create_oval(7, 7, 17, 17, fill="#a0c4ff", outline="")
+        _portal_canvas.configure(cursor="hand2")
+        _portal_canvas.bind("<Button-1>", lambda e: _summon_portal(self.root))
 
         ctk.CTkButton(btns, text="Next", command=_next,
                       fg_color=GREEN, hover_color=GREEN_H, width=100,
