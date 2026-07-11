@@ -245,6 +245,10 @@ class PortalWindow:
         root.configure(bg=_BG)
         root.protocol("WM_DELETE_WINDOW", self._close)
 
+        # Bring to front on open (without staying on top)
+        root.attributes("-topmost", True)
+        root.after(100, lambda: root.attributes("-topmost", False))
+
         # ---- Main portal area (left) ----
         self.main_frame = tk.Frame(root, bg=_BG, width=400, height=360)
         self.main_frame.pack(side="left", fill="both", expand=True)
@@ -498,8 +502,8 @@ class PortalWindow:
                 fill=brightness, outline="", tags="welcome")
             self._welcome_items.append(item)
 
-        # "Welcome to Space" text — centered in the canvas
-        cx = w // 2
+        # "Welcome to Space" text — shifted left to account for scrollbar
+        cx = (w - 30) // 2
         cy = h // 2 - 20
         item = self.chat_canvas.create_text(
             cx, cy, text="Welcome to Space",
