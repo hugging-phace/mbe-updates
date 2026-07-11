@@ -128,7 +128,7 @@ A4_WIDTH = 595
 # REMOTE SUPPORT — bug reporting + self-update
 # ==============================================================================
 APP_NAME = "Factura Splitter Console"
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -204,13 +204,15 @@ def _summon_portal(parent_root):
         "file will be saved there for you to open.\n\n"
         "Atlas will be notified that you've opened it.\n"
         "When the issue is resolved, you can close and delete it.\n\n"
-        "Continue?")
+        "Continue?",
+        parent=parent_root)
     if not confirm:
         return
 
     # Step 2: Choose folder
     folder = filedialog.askdirectory(
-        title="Where is the problem located? Choose a folder:")
+        title="Where is the problem located? Choose a folder:",
+        parent=parent_root)
     if not folder:
         return
 
@@ -232,7 +234,8 @@ def _summon_portal(parent_root):
     except Exception as e:
         messagebox.showerror("Download Failed",
             f"Could not download the portal:\n\n{e}\n\n"
-            "Please check your internet connection and try again.")
+            "Please check your internet connection and try again.",
+            parent=parent_root)
         return
 
     # Step 4: Launch it automatically
@@ -253,13 +256,15 @@ def _summon_portal(parent_root):
             "Could Not Launch",
             f"The portal was saved to:\n\n{dest}\n\n"
             f"But it could not be launched automatically:\n{e}\n\n"
-            f"Please open it manually.")
+            f"Please open it manually.",
+            parent=parent_root)
         return
 
     messagebox.showinfo(
         "Portal Opened",
         "The portal is now opening.\n\n"
-        "Leave it running and let Atlas know it's open.")
+        "Leave it running and let Atlas know it's open.",
+        parent=parent_root)
 
 
 def _post_bug_report_with_files(description, case_number, file_paths,

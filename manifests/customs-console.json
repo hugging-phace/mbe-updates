@@ -1,5 +1,5 @@
 {
-  "version": "1.0.5",
-  "changelog": "Added remote support portal button with pale blue icon.",
+  "version": "1.0.6",
+  "changelog": "Fixed portal dialog appearing behind bug window.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Packages%20at%20Customs%20Console.pyw"
 }

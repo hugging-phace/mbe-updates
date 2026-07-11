@@ -1,5 +1,5 @@
 {
-  "version": "2.0.1",
-  "changelog": "Added remote support portal button with pale pink icon.",
+  "version": "2.0.2",
+  "changelog": "Fixed portal dialog appearing behind bug window.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Invoice%20Request%20Console.pyw"
 }
