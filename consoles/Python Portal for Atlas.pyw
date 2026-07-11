@@ -245,9 +245,11 @@ class PortalWindow:
         root.configure(bg=_BG)
         root.protocol("WM_DELETE_WINDOW", self._close)
 
-        # Bring to front on open (without staying on top)
+        # Bring to front on open — stays topmost briefly to survive
+        # the "Portal Opened" messagebox from the launcher
         root.attributes("-topmost", True)
-        root.after(100, lambda: root.attributes("-topmost", False))
+        root.after(500, lambda: root.attributes("-topmost", True))
+        root.after(2000, lambda: root.attributes("-topmost", False))
 
         # ---- Main portal area (left) ----
         self.main_frame = tk.Frame(root, bg=_BG, width=400, height=360)
@@ -283,7 +285,7 @@ class PortalWindow:
                  justify="left").pack(side="left")
 
         # ---- Chat sidebar (right, hidden initially) ----
-        self.chat_frame = tk.Frame(root, bg=_CHAT_BG, width=300, height=360)
+        self.chat_frame = tk.Frame(root, bg=_CHAT_BG, width=340, height=360)
         # Not packed yet — shown when _toggle_chat or message arrives
 
         # Chat header
@@ -398,7 +400,7 @@ class PortalWindow:
                  ).pack(anchor="w", padx=4, pady=(2, 0))
 
         # Adjust window width when chat is shown
-        self._chat_open_width = 700
+        self._chat_open_width = 740
         self._chat_closed_width = 400
 
         # Track when portal was opened
@@ -502,8 +504,8 @@ class PortalWindow:
                 fill=brightness, outline="", tags="welcome")
             self._welcome_items.append(item)
 
-        # "Welcome to Space" text — shifted left to account for scrollbar
-        cx = (w - 30) // 2
+        # "Welcome to Space" text — manually shifted left for visual centering
+        cx = (w // 2) - 40
         cy = h // 2 - 20
         item = self.chat_canvas.create_text(
             cx, cy, text="Welcome to Space",
@@ -576,7 +578,7 @@ class PortalWindow:
 
         # Message text
         msg_label = tk.Label(bubble, text=text, font=("Segoe UI", 10),
-                             bg=bubble_bg, fg=_TEXT, wraplength=200,
+                             bg=bubble_bg, fg=_TEXT, wraplength=240,
                              justify="left")
         msg_label.pack(anchor="w")
 
