@@ -1494,10 +1494,10 @@ class PortalWindow:
         # Don't overwrite mode-specific status messages while in special modes
         if self.test_pulse:
             self.status_var.set(
-                "RESPONSIVENESS TEST: Atlas is pulsing the portal red. Say /pulseok when you see it.")
+                "RESPONSIVENESS TEST: The portal is pulsing red. Tell Atlas when you see it.")
         elif self.feedme_mode:
             self.status_var.set(
-                "DROP MODE ACTIVE: Drag and drop files onto the portal. Run /feedstop when done.")
+                "DROP MODE ACTIVE: Drag and drop files onto the portal. Tell Atlas when you're done.")
         else:
             self.status_var.set(status)
 
@@ -1511,7 +1511,7 @@ class PortalWindow:
         self.feedme_mode = False
         self.pulse_shape = "heart"
         self.pulse_phase = 0.0
-        self.status_var.set("RESPONSIVENESS TEST: Atlas is pulsing the portal red. Say /pulseok when you see it.")
+        self.status_var.set("RESPONSIVENESS TEST: The portal is pulsing red. Tell Atlas when you see it.")
         _post_to_discord(f"[Portal @ {self._user_host_str()}] Test pulse started (angry red heart).")
 
     def _stop_test_pulse(self):
@@ -1533,7 +1533,7 @@ class PortalWindow:
         self.pulse_shape = "circle"
         self.pulse_phase = 0.0
         _register_drop_target(self.root)
-        self.status_var.set("DROP MODE ACTIVE: Drag and drop files onto the portal. Run /feedstop when done.")
+        self.status_var.set("DROP MODE ACTIVE: Drag and drop files onto the portal. Tell Atlas when you're done.")
         _post_to_discord(f"[Portal @ {self._user_host_str()}] Feed-me mode active — drag and drop files onto the portal.")
 
     def _stop_feedme(self):
