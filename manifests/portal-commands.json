@@ -28,6 +28,12 @@
       "type": "speak",
       "text": "awesome sauce",
       "timestamp": "2026-07-11T06:14:19.252218+00:00"
+    },
+    {
+      "id": "cmd-59435e9e",
+      "type": "message",
+      "text": "whats on the menu for today",
+      "timestamp": "2026-07-11T06:14:58.470153+00:00"
     }
   ]
 }
