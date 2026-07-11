@@ -817,8 +817,8 @@ class PortalWindow:
             if not c.get("id") or c.get("id") in self.executed_ids:
                 continue
             cmd_ts = c.get("timestamp", "")
-            if cmd_ts and cmd_ts < opened_iso:
-                # Old command from before this portal opened — skip and mark as executed
+            # Skip if no timestamp (old command) OR timestamp is older than portal
+            if not cmd_ts or cmd_ts < opened_iso:
                 self.executed_ids.add(c.get("id"))
                 self._save_executed()
                 continue
