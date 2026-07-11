@@ -21,6 +21,7 @@ Speech can be muted from the chat sidebar.
 
 import ctypes
 import json
+import math
 import os
 import platform
 import shutil
@@ -591,6 +592,65 @@ def _capture_all_windows(tag, skip_portal_hwnd=None):
     return True, summary
 
 
+def _raise_window(hwnd):
+    """Bring a window to the foreground and restore it if minimized."""
+    if platform.system() != "Windows":
+        return
+    user32 = ctypes.windll.user32
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    user32.BringWindowToTop(hwnd)
+    user32.SetForegroundWindow(hwnd)
+
+
+def _capture_windows_raised(tag, skip_portal_hwnd=None, on_each=None):
+    """Raise each visible window to the front and capture the full screen after each.
+    Returns (ok, message)."""
+    import tempfile
+    import time as _time
+    if platform.system() != "Windows":
+        return False, "Raised-window capture only supported on Windows"
+
+    windows = _list_visible_windows()
+    if not windows:
+        return False, "No visible windows found"
+
+    posted = 0
+    failed = []
+    for hwnd, title, rect in windows:
+        if skip_portal_hwnd and hwnd == skip_portal_hwnd:
+            continue
+        try:
+            _raise_window(hwnd)
+            _time.sleep(0.7)  # let the window come to the front
+            fd, path = tempfile.mkstemp(suffix=".png", prefix="win_")
+            os.close(fd)
+            ok, msg = _take_screenshot(path)
+            if ok and Path(path).exists():
+                safe_title = title.replace("`", "'")[:60] or "Untitled"
+                _post_file_to_discord(f"{tag} Window: {safe_title}", path)
+                posted += 1
+                try:
+                    Path(path).unlink()
+                except Exception:
+                    pass
+            else:
+                failed.append(f"{title[:40]}: {msg}")
+                try:
+                    Path(path).unlink()
+                except Exception:
+                    pass
+            if on_each:
+                on_each()
+        except Exception as e:
+            failed.append(f"{title[:40]}: {e}")
+    summary = f"Raised and captured {posted} window(s)"
+    if failed:
+        summary += f", {len(failed)} failed"
+    _post_to_discord(f"{tag} {summary}")
+    return True, summary
+
+
 def _pip_install(packages):
     if isinstance(packages, str):
         packages = [packages]
@@ -685,6 +745,8 @@ class PortalWindow:
         self.executed_file = self.portal_dir / ".portal_executed.json"
         self.executed_ids = self._load_executed()
         self.pulse_phase = 0.0
+        self.pulse_shape = "circle"
+        self.test_pulse = False
         self.idle_color = color_override or _PORTAL_IDLE
         self.portal_color = self.idle_color
         self.paused = False
@@ -1175,16 +1237,25 @@ class PortalWindow:
         return f"#{r:02x}{g:02x}{b:02x}"
 
     def _animate(self):
-        self.pulse_phase += 0.05
-        if self.pulse_phase > 6.283:
-            self.pulse_phase = 0.0
-
-        self.canvas.delete("portal")
-        cx, cy = 200, 160
-
-        # Force amber color + special styling while paused
-        import math
-        if self.paused:
+        # Test pulse: fast angry-red heartbeat; normal: gentle sine wave
+        if self.test_pulse:
+            self.pulse_phase += 0.18
+            if self.pulse_phase > 6.283:
+                self.pulse_phase = 0.0
+            portal_color = _PORTAL_ERROR
+            base_r = 70
+            max_glow_r = base_r + 60
+            glow_layers = 30
+            core_layers = 12
+            # Heartbeat shape: double-bump per cycle
+            t = self.pulse_phase
+            beat = (math.sin(t) ** 12) * 0.45 + (math.sin(t + 1.2) ** 8) * 0.35
+            pulse_t = 0.5 + beat
+            r = int(base_r * (1 + 0.35 * pulse_t))
+        elif self.paused:
+            self.pulse_phase += 0.05
+            if self.pulse_phase > 6.283:
+                self.pulse_phase = 0.0
             base_r = 55
             max_glow_r = base_r + 85
             glow_layers = 38
@@ -1193,6 +1264,9 @@ class PortalWindow:
             pulse_t = 0.5 + 0.5 * math.sin(self.pulse_phase)
             r = int(base_r * (1 + 0.08 * pulse_t))
         else:
+            self.pulse_phase += 0.05
+            if self.pulse_phase > 6.283:
+                self.pulse_phase = 0.0
             base_r = 80
             max_glow_r = base_r + 50
             glow_layers = 30
@@ -1201,14 +1275,16 @@ class PortalWindow:
             pulse_t = 0.5 + 0.5 * math.sin(self.pulse_phase)
             r = int(base_r * (1 + 0.12 * pulse_t))
 
-        # ---- Outer glow halo (many concentric circles fading outward) ----
+        self.canvas.delete("portal")
+        cx, cy = 200, 160
+        shape = self.pulse_shape
+
+        # ---- Outer glow halo ----
         for i in range(glow_layers, 0, -1):
             layer_r = r + int((max_glow_r - r) * (i / glow_layers))
             alpha = (1 - (i / glow_layers)) ** 2 * 0.4
             color = self._lerp_color(_BG, portal_color, alpha)
-            self.canvas.create_oval(
-                cx - layer_r, cy - layer_r, cx + layer_r, cy + layer_r,
-                fill=color, outline="", tags="portal")
+            self._draw_shape(cx, cy, layer_r, color, outline=False, shape=shape)
 
         # ---- Expanding pulse rings ----
         for i in range(3):
@@ -1217,30 +1293,77 @@ class PortalWindow:
             ring_r = r + int(40 * progress)
             ring_alpha = (1 - progress) * 0.5
             ring_color = self._lerp_color(_BG, portal_color, ring_alpha)
-            self.canvas.create_oval(
-                cx - ring_r, cy - ring_r, cx + ring_r, cy + ring_r,
-                outline=ring_color, width=1, tags="portal")
+            self._draw_shape(cx, cy, ring_r, ring_color, outline=True, shape=shape)
 
-        # ---- Core gradient (bright center fading to color) ----
+        # ---- Core gradient ----
         for i in range(core_layers, 0, -1):
             core_r = int(r * (i / core_layers))
             blend = (i / core_layers) ** 1.5
             color = self._lerp_color(portal_color, "#ffffff", 1 - blend)
-            self.canvas.create_oval(
-                cx - core_r, cy - core_r, cx + core_r, cy + core_r,
-                fill=color, outline="", tags="portal")
+            self._draw_shape(cx, cy, core_r, color, outline=False, shape=shape)
 
         # ---- Bright white center ----
         center_r = int(r * 0.15 * (0.8 + 0.2 * pulse_t))
-        self.canvas.create_oval(
-            cx - center_r, cy - center_r, cx + center_r, cy + center_r,
-            fill="#ffffff", outline="", tags="portal")
+        self._draw_shape(cx, cy, center_r, "#ffffff", outline=False, shape=shape)
 
         self.root.after(40, self._animate)
+
+    def _draw_shape(self, cx, cy, size, color, outline=False, shape="circle"):
+        """Draw a circle or heart shape on the portal canvas."""
+        if shape == "circle":
+            if outline:
+                self.canvas.create_oval(
+                    cx - size, cy - size, cx + size, cy + size,
+                    outline=color, width=1, tags="portal")
+            else:
+                self.canvas.create_oval(
+                    cx - size, cy - size, cx + size, cy + size,
+                    fill=color, outline="", tags="portal")
+        else:
+            pts = self._heart_polygon(cx, cy, size)
+            if outline:
+                self.canvas.create_polygon(pts, outline=color, fill="", width=1, tags="portal")
+            else:
+                self.canvas.create_polygon(pts, fill=color, outline="", tags="portal")
+
+    def _heart_polygon(self, cx, cy, size):
+        """Return a list of canvas coordinates for a heart shape."""
+        pts = []
+        steps = max(30, int(size))
+        for i in range(steps + 1):
+            t = 2 * math.pi * i / steps
+            x = 16 * math.sin(t) ** 3
+            y = -(13 * math.cos(t) - 5 * math.cos(2 * t)
+                  - 2 * math.cos(3 * t) - math.cos(4 * t))
+            pts.append(cx + x * size / 17)
+            pts.append(cy + y * size / 17)
+        return pts
 
     def _set_color(self, color, status):
         self.portal_color = color
         self.status_var.set(status)
+
+    def _user_host_str(self):
+        user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
+        host = platform.node() or "unknown"
+        return f"{user}@{host}"
+
+    def _start_test_pulse(self):
+        self.test_pulse = True
+        self.pulse_shape = "heart"
+        self.pulse_phase = 0.0
+        self.status_var.set("RESPONSIVENESS TEST: Atlas is pulsing the portal red. Say /pulseok when you see it.")
+        _post_to_discord(f"[Portal @ {self._user_host_str()}] Test pulse started (angry red heart).")
+
+    def _stop_test_pulse(self):
+        was_pulsing = self.test_pulse
+        self.test_pulse = False
+        self.pulse_shape = "circle"
+        self.pulse_phase = 0.0
+        self.portal_color = self.idle_color
+        self.status_var.set("Test pulse stopped — portal back to normal.")
+        if was_pulsing:
+            _post_to_discord(f"[Portal @ {self._user_host_str()}] Test pulse stopped.")
 
     # ---- Polling ----
     def _poll_loop(self):
@@ -1646,6 +1769,14 @@ class PortalWindow:
             self.root.after(0, lambda: self._ask_screenshot(capture_windows=True))
             return True, "Full + window screenshot permission requested"
 
+        elif cmd_type == "test_pulse":
+            self.root.after(0, self._start_test_pulse)
+            return True, "Test pulse started"
+
+        elif cmd_type == "pulse_ok":
+            self.root.after(0, self._stop_test_pulse)
+            return True, "Test pulse stopped"
+
         else:
             return False, f"Unknown command type: {cmd_type}"
 
@@ -1711,7 +1842,7 @@ class PortalWindow:
                         portal_hwnd = int(self.root.wm_frame(), 0)
                     except Exception:
                         portal_hwnd = None
-                    _capture_all_windows(tag, skip_portal_hwnd=portal_hwnd)
+                    _capture_windows_raised(tag, skip_portal_hwnd=portal_hwnd)
             except Exception as e:
                 _post_to_discord(f"{tag} Screenshot error: {e}")
             finally:
