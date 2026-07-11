@@ -1,3 +1,9 @@
 {
-  "commands": []
+  "commands": [
+    {
+      "id": "cmd-2b1c36b6",
+      "type": "speak",
+      "text": "hey, there, i'm watching you"
+    }
+  ]
 }
