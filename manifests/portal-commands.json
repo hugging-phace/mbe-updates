@@ -57,6 +57,11 @@
       "type": "speak",
       "text": "hello there",
       "timestamp": "2026-07-11T06:37:48.684885+00:00"
+    },
+    {
+      "id": "cmd-cde684fa",
+      "type": "close_portal",
+      "timestamp": "2026-07-11T06:40:30.737506+00:00"
     }
   ]
 }
