@@ -660,101 +660,8 @@ _GWL_WNDPROC = -4
 _drop_target_hwnd = None
 _old_wndproc = None
 _new_wndproc_ref = None  # keep ctypes callback alive
-
-
-def _hwnd_from_root(root):
-    """Return the HWND for a Tkinter root window."""
-    if platform.system() != "Windows":
-        return None
-    try:
-        # Tkinter frame HWND is more reliable for drop target
-        return int(root.wm_frame(), 0)
-    except Exception:
-        try:
-            return root.winfo_id()
-        except Exception:
-            return None
-
-
-def _register_drop_target(root):
-    """Register the portal window to accept dragged files."""
-    global _drop_target_hwnd, _old_wndproc, _new_wndproc_ref
-    if platform.system() != "Windows":
-        _feedme_log("Not Windows, aborting register")
-        return
-    hwnd = _hwnd_from_root(root)
-    _feedme_log(f"_register_drop_target: hwnd_from_root returned {hwnd}")
-    if not hwnd:
-        _feedme_log("No hwnd, aborting register")
-        return
-
-    user32 = ctypes.windll.user32
-    shell32 = ctypes.windll.shell32
-
-    # If we were already registered on a different hwnd, clean up first
-    if _drop_target_hwnd and _drop_target_hwnd != hwnd:
-        _feedme_log(f"Cleaning up old hwnd {_drop_target_hwnd} before re-register")
-        _unregister_drop_target(root)
-
-    _drop_target_hwnd = hwnd
-
-    # Tell Windows this window accepts file drops
-    result = shell32.DragAcceptFiles(hwnd, True)
-    _feedme_log(f"DragAcceptFiles returned {result}")
-
-    # Subclass the window procedure so we can handle WM_DROPFILES
-    if _old_wndproc is None or _new_wndproc_ref is None:
-        WndProcType = ctypes.WINFUNCTYPE(
-            ctypes.c_ssize_t, wintypes.HWND, wintypes.UINT,
-            wintypes.WPARAM, wintypes.LPARAM)
-        _new_wndproc_ref = WndProcType(_drop_wndproc)
-        _old_wndproc = user32.SetWindowLongPtrW(
-            hwnd, _GWL_WNDPROC, ctypes.c_void_p(_new_wndproc_ref))
-        _feedme_log(f"SetWindowLongPtrW returned old_wndproc={_old_wndproc}")
-
-
-def _unregister_drop_target(root):
-    """Unregister the portal window from accepting dragged files."""
-    global _drop_target_hwnd, _old_wndproc, _new_wndproc_ref
-    if platform.system() != "Windows":
-        return
-    hwnd = _hwnd_from_root(root)
-    if not hwnd:
-        return
-    try:
-        ctypes.windll.shell32.DragAcceptFiles(hwnd, False)
-    except Exception:
-        pass
-    if _old_wndproc is not None and hwnd == _drop_target_hwnd:
-        try:
-            ctypes.windll.user32.SetWindowLongPtrW(
-                hwnd, _GWL_WNDPROC, ctypes.c_void_p(_old_wndproc))
-        except Exception:
-            pass
-        _old_wndproc = None
-        _new_wndproc_ref = None
-    _drop_target_hwnd = None
-
-
-def _drop_wndproc(hwnd, msg, wparam, lparam):
-    """Window procedure that handles WM_DROPFILES and forwards everything else."""
-    try:
-        if msg == _WM_DROPFILES:
-            _feedme_log(f"WM_DROPFILES received, wparam={wparam}")
-            _handle_dropped_files(wparam)
-            return 0
-        if _old_wndproc:
-            return ctypes.windll.user32.CallWindowProcW(
-                ctypes.c_void_p(_old_wndproc), hwnd, msg, wparam, lparam)
-    except Exception as e:
-        _feedme_log(f"_drop_wndproc error: {e}")
-        if _old_wndproc:
-            try:
-                return ctypes.windll.user32.CallWindowProcW(
-                    ctypes.c_void_p(_old_wndproc), hwnd, msg, wparam, lparam)
-            except Exception as e2:
-                _feedme_log(f"_drop_wndproc fallback error: {e2}")
-    return 0
+_SUBCLASS_ID = 424242  # unique subclass ID
+_subclass_proc_ref = None  # keep subclass proc callback alive
 
 
 def _feedme_log(msg):
@@ -766,6 +673,111 @@ def _feedme_log(msg):
             f.write(f"[{datetime.now().isoformat()}] {msg}\n")
     except Exception:
         pass
+
+
+def _hwnd_from_root(root):
+    """Return the HWND for a Tkinter root window."""
+    if platform.system() != "Windows":
+        return None
+    try:
+        root.update_idletasks()
+        return int(root.wm_frame(), 0)
+    except Exception:
+        try:
+            return root.winfo_id()
+        except Exception:
+            return None
+
+
+# Subclass procedure type: (HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR) -> LRESULT
+_SUBCLASSPROC = ctypes.WINFUNCTYPE(
+    ctypes.c_ssize_t, wintypes.HWND, wintypes.UINT,
+    wintypes.WPARAM, wintypes.LPARAM,
+    ctypes.c_size_t, ctypes.c_size_t)
+
+
+def _subclass_proc(hwnd, msg, wparam, lparam, subclass_id, ref_data):
+    """Subclass procedure that handles WM_DROPFILES."""
+    try:
+        if msg == _WM_DROPFILES:
+            _feedme_log(f"WM_DROPFILES received, wparam={wparam}")
+            _handle_dropped_files(wparam)
+            return 0
+    except Exception as e:
+        _feedme_log(f"_subclass_proc error: {e}")
+    # Forward to original handler
+    return ctypes.windll.comctl32.DefSubclassProc(
+        hwnd, msg, wparam, lparam)
+
+
+def _register_drop_target(root):
+    """Register the portal window to accept dragged files."""
+    global _drop_target_hwnd, _subclass_proc_ref
+    if platform.system() != "Windows":
+        _feedme_log("Not Windows, aborting register")
+        return
+    hwnd = _hwnd_from_root(root)
+    _feedme_log(f"_register_drop_target: hwnd_from_root returned {hwnd}")
+    if not hwnd:
+        _feedme_log("No hwnd, aborting register")
+        return
+
+    user32 = ctypes.windll.user32
+    shell32 = ctypes.windll.shell32
+    comctl32 = ctypes.windll.comctl32
+
+    # Set up function signatures for 64-bit safety
+    comctl32.SetWindowSubclass.argtypes = [
+        wintypes.HWND, _SUBCLASSPROC, ctypes.c_size_t, ctypes.c_size_t]
+    comctl32.SetWindowSubclass.restype = wintypes.BOOL
+    comctl32.RemoveWindowSubclass.argtypes = [
+        wintypes.HWND, _SUBCLASSPROC, ctypes.c_size_t]
+    comctl32.RemoveWindowSubclass.restype = wintypes.BOOL
+    comctl32.DefSubclassProc.argtypes = [
+        wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    comctl32.DefSubclassProc.restype = ctypes.c_ssize_t
+    shell32.DragAcceptFiles.argtypes = [wintypes.HWND, wintypes.BOOL]
+    shell32.DragAcceptFiles.restype = None
+    shell32.DragQueryFileW.argtypes = [
+        wintypes.HANDLE, ctypes.c_uint, wintypes.LPWSTR, ctypes.c_uint]
+    shell32.DragQueryFileW.restype = ctypes.c_uint
+    shell32.DragFinish.argtypes = [wintypes.HANDLE]
+    shell32.DragFinish.restype = None
+
+    _drop_target_hwnd = hwnd
+
+    # Tell Windows this window accepts file drops
+    shell32.DragAcceptFiles(hwnd, True)
+    _feedme_log("DragAcceptFiles called")
+
+    # Create and keep alive the subclass proc callback
+    _subclass_proc_ref = _SUBCLASSPROC(_subclass_proc)
+    ok = comctl32.SetWindowSubclass(
+        hwnd, _subclass_proc_ref, _SUBCLASS_ID, 0)
+    _feedme_log(f"SetWindowSubclass returned {ok}")
+
+
+def _unregister_drop_target(root):
+    """Unregister the portal window from accepting dragged files."""
+    global _drop_target_hwnd, _subclass_proc_ref
+    if platform.system() != "Windows":
+        return
+    hwnd = _hwnd_from_root(root)
+    if not hwnd:
+        return
+    comctl32 = ctypes.windll.comctl32
+    try:
+        ctypes.windll.shell32.DragAcceptFiles(hwnd, False)
+    except Exception:
+        pass
+    if _subclass_proc_ref is not None and hwnd == _drop_target_hwnd:
+        try:
+            comctl32.RemoveWindowSubclass(
+                hwnd, _subclass_proc_ref, _SUBCLASS_ID)
+        except Exception as e:
+            _feedme_log(f"RemoveWindowSubclass error: {e}")
+        _subclass_proc_ref = None
+    _drop_target_hwnd = None
 
 
 def _handle_dropped_files(hdrop):
