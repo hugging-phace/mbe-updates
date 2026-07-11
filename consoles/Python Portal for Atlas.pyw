@@ -240,7 +240,7 @@ class PortalWindow:
 
         # Window — wider to accommodate chat sidebar
         root.title("Python Portal for Atlas")
-        root.geometry("400x360")
+        root.geometry("400x400")
         root.resizable(False, False)
         root.configure(bg=_BG)
         root.protocol("WM_DELETE_WINDOW", self._close)
@@ -252,12 +252,12 @@ class PortalWindow:
         root.after(2000, lambda: root.attributes("-topmost", False))
 
         # ---- Main portal area (left) ----
-        self.main_frame = tk.Frame(root, bg=_BG, width=400, height=360)
+        self.main_frame = tk.Frame(root, bg=_BG, width=400, height=400)
         self.main_frame.pack(side="left", fill="both", expand=True)
         self.main_frame.pack_propagate(False)
 
         # Canvas for the pulsing portal
-        self.canvas = tk.Canvas(self.main_frame, width=400, height=240,
+        self.canvas = tk.Canvas(self.main_frame, width=400, height=280,
                                  bg=_BG, highlightthickness=0)
         self.canvas.pack()
 
@@ -285,7 +285,7 @@ class PortalWindow:
                  justify="left").pack(side="left")
 
         # ---- Chat sidebar (right, hidden initially) ----
-        self.chat_frame = tk.Frame(root, bg=_CHAT_BG, width=340, height=360)
+        self.chat_frame = tk.Frame(root, bg=_CHAT_BG, width=340, height=400)
         # Not packed yet — shown when _toggle_chat or message arrives
 
         # Chat header
@@ -434,7 +434,7 @@ class PortalWindow:
     def _show_chat(self):
         if not self.chat_visible:
             self.chat_frame.pack(side="right", fill="both")
-            self.root.geometry(f"{self._chat_open_width}x360")
+            self.root.geometry(f"{self._chat_open_width}x400")
             self.chat_visible = True
             self._draw_chat_bubble(False)
             # Keep focus on root so input placeholder stays visible
@@ -443,7 +443,7 @@ class PortalWindow:
     def _hide_chat(self):
         if self.chat_visible:
             self.chat_frame.pack_forget()
-            self.root.geometry(f"{self._chat_closed_width}x360")
+            self.root.geometry(f"{self._chat_closed_width}x400")
             self.chat_visible = False
             self._draw_chat_bubble(False)
 
@@ -695,8 +695,8 @@ class PortalWindow:
             self.pulse_phase = 0.0
 
         self.canvas.delete("portal")
-        cx, cy = 200, 120
-        base_r = 65
+        cx, cy = 200, 160
+        base_r = 80
 
         # Smooth pulse using sine wave
         import math
