@@ -427,7 +427,7 @@ class PortalWindow:
             self.root.geometry(f"{self._chat_open_width}x360")
             self.chat_visible = True
             self._draw_chat_bubble(False)
-            self.chat_input.focus_set()
+            # Don't auto-focus input — keep placeholder visible until user clicks
 
     def _hide_chat(self):
         if self.chat_visible:
@@ -474,6 +474,8 @@ class PortalWindow:
         self._welcome_shown = True
         w = self.chat_canvas.winfo_width() or 300
         h = self.chat_canvas.winfo_height() or 250
+        # Subtract scrollbar width (~15px) so text is centered in visible area
+        w = w - 15
 
         # Stars at fixed positions (relative to canvas center)
         import random
@@ -492,19 +494,19 @@ class PortalWindow:
                 fill=brightness, outline="", tags="welcome")
             self._welcome_items.append(item)
 
-        # "Welcome to Space" text
+        # "Welcome to Space" text — centered in visible area
         cx = w // 2
         cy = h // 2 - 20
         item = self.chat_canvas.create_text(
             cx, cy, text="Welcome to Space",
             fill=_ACCENT, font=("Segoe UI", 14, "bold"),
-            tags="welcome")
+            anchor="center", tags="welcome")
         self._welcome_items.append(item)
 
         item = self.chat_canvas.create_text(
             cx, cy + 24, text="Atlas will appear here when you're needed.",
             fill=_MUTED, font=("Segoe UI", 8),
-            tags="welcome")
+            anchor="center", tags="welcome")
         self._welcome_items.append(item)
 
     def _remove_welcome(self):
