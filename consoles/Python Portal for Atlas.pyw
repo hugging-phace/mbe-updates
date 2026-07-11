@@ -781,7 +781,13 @@ def _unregister_drop_target(root):
 
 
 def _handle_dropped_files(hdrop):
-    """Extract file paths from a Windows HDROP and upload them to Discord."""
+    """Extract file paths from a Windows HDROP and upload them to Discord.
+    
+    IMPORTANT: This is called from the Windows subclass procedure, which runs
+    on Tkinter's event loop thread. We must extract file paths quickly and
+    hand off ALL network work to a background thread so we don't block the
+    event loop (which would freeze the animation and eventually crash).
+    """
     _feedme_log(f"_handle_dropped_files called, hdrop={hdrop}")
     if platform.system() != "Windows":
         _feedme_log("Not Windows, aborting")
@@ -807,14 +813,20 @@ def _handle_dropped_files(hdrop):
     if not files:
         return
 
-    user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
-    host = platform.node() or "unknown"
-    tag = f"[Portal @ {user}@{host}]"
-    _feedme_log(f"Posting 'Received {len(files)} file(s)' to Discord")
-    ok = _post_to_discord(f"{tag} Received {len(files)} file(s) via drag-and-drop.")
-    _feedme_log(f"_post_to_discord returned {ok}")
-
+    # Hand off ALL network work to a background thread.
+    # Do NOT do any HTTP calls here — it would block the Tkinter event loop
+    # and freeze the portal animation.
     def _upload():
+        user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
+        host = platform.node() or "unknown"
+        tag = f"[Portal @ {user}@{host}]"
+        try:
+            _feedme_log(f"Posting 'Received {len(files)} file(s)' to Discord")
+            ok = _post_to_discord(f"{tag} Received {len(files)} file(s) via drag-and-drop.")
+            _feedme_log(f"_post_to_discord returned {ok}")
+        except Exception as e:
+            _feedme_log(f"_post_to_discord exception: {e}")
+
         for path in files:
             try:
                 p = Path(path)
