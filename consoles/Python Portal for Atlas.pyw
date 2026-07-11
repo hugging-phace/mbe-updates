@@ -1301,20 +1301,33 @@ class PortalWindow:
             result = messagebox.askyesno(
                 "Close Portal?",
                 "Are you sure you want to close the portal?\n\n"
-                "This will disconnect from Atlas and delete the portal file.\n"
-                "You can always open another one if needed.",
+                "Atlas will be alerted and can reopen it if needed.",
                 icon="question")
         except Exception:
             result = messagebox.askyesno(
                 "Close Portal?",
                 "Are you sure you want to close the portal?\n\n"
-                "This will disconnect from Atlas and delete the portal file.\n"
-                "You can always open another one if needed.")
+                "Atlas will be alerted and can reopen it if needed.")
         if result:
-            self._force_close()
+            self._user_close()
+
+    def _user_close(self):
+        """User closed the portal: keep the file so Atlas can resurrect it."""
+        try:
+            _firebase_put(f"sessions/{SESSION_ID}/status", "user-closed")
+        except Exception:
+            pass
+        user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
+        host = platform.node() or "unknown"
+        _post_to_discord(
+            f"**User closed the portal**\n"
+            f"[Portal @ {user}@{host}]\n"
+            f"Session: `{SESSION_ID}`\n"
+            f"Atlas can use `/resurrect` to reopen it or `/close` to end the session.")
+        self.root.destroy()
 
     def _force_close(self):
-        """Actually close and self-delete — no confirmation."""
+        """Official close (remote /close): delete the portal file."""
         # Mark session as closed so the bot can delete the temp channel
         try:
             _mark_session_closed()
