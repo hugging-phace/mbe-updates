@@ -224,13 +224,24 @@ def _summon_portal(parent_root):
             "Please check your internet connection and try again.")
         return
 
-    # Step 4: Tell user to open it
+    # Step 4: Launch it automatically
+    try:
+        subprocess.Popen(
+            [sys.executable, dest],
+            creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0,
+        )
+    except Exception as e:
+        messagebox.showerror(
+            "Could Not Launch",
+            f"The portal was saved to:\n\n{dest}\n\n"
+            f"But it could not be launched automatically:\n{e}\n\n"
+            f"Please open it manually.")
+        return
+
     messagebox.showinfo(
-        "Portal Ready",
-        f"The portal has been saved to:\n\n{dest}\n\n"
-        f"Please go to that folder and open:\n"
-        f"  Python Portal for Atlas.pyw\n\n"
-        f"Leave it open and let Atlas know it's running.")
+        "Portal Opened",
+        "The portal is now opening.\n\n"
+        "Leave it running and let Atlas know it's open.")
 
 
 def _post_bug_report_with_files(description, case_number, file_paths,
