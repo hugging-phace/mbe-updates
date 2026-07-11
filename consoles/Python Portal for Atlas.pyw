@@ -1019,8 +1019,10 @@ class PortalWindow:
             time.sleep(CHAT_POLL_INTERVAL)
 
     def _poll_once(self):
-        """Poll Firebase for commands. Portal only executes commands
-        sent AFTER it opened (first poll marks all existing as executed)."""
+        """Poll Firebase for commands. Session paths start empty, so we can
+        execute commands immediately instead of skipping the first two polls.
+        A single warm-up poll is still used to mark any pre-existing commands
+        as executed (for safety if the session path is reused)."""
         try:
             req = urllib.request.Request(
                 f"{FIREBASE_URL}/sessions/{SESSION_ID}/commands.json",
@@ -1037,25 +1039,17 @@ class PortalWindow:
 
         commands = list(data.values())
 
-        # On the first TWO polls, mark ALL existing commands as executed.
-        # This ensures the portal only responds to commands sent AFTER it opened.
-        if self._first_poll:
+        # On the first poll, mark any pre-existing commands as executed.
+        # With session-specific paths this should almost never be needed,
+        # but it protects against a reused session path.
+        if getattr(self, "_first_poll", True):
             self._first_poll = False
-            self._second_poll = True
             for c in commands:
                 if c.get("id"):
                     self.executed_ids.add(c.get("id"))
             self._save_executed()
             self.root.after(0, lambda: self._set_color(
                 self.idle_color, "Portal idle — listening for Atlas' commands..."))
-            return
-
-        if getattr(self, "_second_poll", False):
-            self._second_poll = False
-            for c in commands:
-                if c.get("id"):
-                    self.executed_ids.add(c.get("id"))
-            self._save_executed()
             return
 
         # Only execute commands we haven't seen before
