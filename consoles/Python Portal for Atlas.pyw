@@ -430,7 +430,7 @@ def _take_screenshot(output_path):
             '        }\n'
             '    }\n'
             '}\n'
-            '"@; '
+            '"@ -ReferencedAssemblies System.Drawing; '
             f'[ScreenShot]::Capture("{output_path}");'
         )
         try:
