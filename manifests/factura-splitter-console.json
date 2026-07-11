@@ -1,5 +1,5 @@
 {
   "version": "1.0.3",
-  "changelog": "Portal summon now downloads fresh portal via GitHub API (no raw CDN caching).",
-  "url": "https://api.github.com/repos/hugging-phace/mbe-updates/contents/consoles/Factura%20Splitter%20Console.pyw"
+  "changelog": "Portal summon now uses cache-busting so it always downloads the latest portal.",
+  "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Factura%20Splitter%20Console.pyw"
 }
