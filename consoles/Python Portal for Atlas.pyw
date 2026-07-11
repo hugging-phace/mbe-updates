@@ -684,20 +684,27 @@ def _register_drop_target(root):
     hwnd = _hwnd_from_root(root)
     if not hwnd:
         return
-    _drop_target_hwnd = hwnd
+
     user32 = ctypes.windll.user32
     shell32 = ctypes.windll.shell32
+
+    # If we were already registered on a different hwnd, clean up first
+    if _drop_target_hwnd and _drop_target_hwnd != hwnd:
+        _unregister_drop_target(root)
+
+    _drop_target_hwnd = hwnd
 
     # Tell Windows this window accepts file drops
     shell32.DragAcceptFiles(hwnd, True)
 
     # Subclass the window procedure so we can handle WM_DROPFILES
-    if _old_wndproc is None:
+    if _old_wndproc is None or _new_wndproc_ref is None:
         WndProcType = ctypes.WINFUNCTYPE(
             ctypes.c_ssize_t, wintypes.HWND, wintypes.UINT,
             wintypes.WPARAM, wintypes.LPARAM)
         _new_wndproc_ref = WndProcType(_drop_wndproc)
-        _old_wndproc = user32.SetWindowLongPtrW(hwnd, _GWL_WNDPROC, _new_wndproc_ref)
+        _old_wndproc = user32.SetWindowLongPtrW(
+            hwnd, _GWL_WNDPROC, ctypes.c_void_p(_new_wndproc_ref))
 
 
 def _unregister_drop_target(root):
@@ -708,10 +715,14 @@ def _unregister_drop_target(root):
     hwnd = _hwnd_from_root(root)
     if not hwnd:
         return
-    ctypes.windll.shell32.DragAcceptFiles(hwnd, False)
+    try:
+        ctypes.windll.shell32.DragAcceptFiles(hwnd, False)
+    except Exception:
+        pass
     if _old_wndproc is not None and hwnd == _drop_target_hwnd:
         try:
-            ctypes.windll.user32.SetWindowLongPtrW(hwnd, _GWL_WNDPROC, _old_wndproc)
+            ctypes.windll.user32.SetWindowLongPtrW(
+                hwnd, _GWL_WNDPROC, ctypes.c_void_p(_old_wndproc))
         except Exception:
             pass
         _old_wndproc = None
@@ -729,7 +740,6 @@ def _drop_wndproc(hwnd, msg, wparam, lparam):
             return ctypes.windll.user32.CallWindowProcW(
                 ctypes.c_void_p(_old_wndproc), hwnd, msg, wparam, lparam)
     except Exception:
-        # If anything goes wrong in our subclass, fall back to old proc if possible
         if _old_wndproc:
             try:
                 return ctypes.windll.user32.CallWindowProcW(
@@ -1497,7 +1507,7 @@ class PortalWindow:
                 "RESPONSIVENESS TEST: The portal is pulsing red. Tell Atlas when you see it.")
         elif self.feedme_mode:
             self.status_var.set(
-                "DROP MODE ACTIVE: Drag and drop files onto the portal. Tell Atlas when you're done.")
+                "DROP MODE ACTIVE: Drop files here and they are sent to Atlas instantly. Tell Atlas when you're done.")
         else:
             self.status_var.set(status)
 
@@ -1533,7 +1543,7 @@ class PortalWindow:
         self.pulse_shape = "circle"
         self.pulse_phase = 0.0
         _register_drop_target(self.root)
-        self.status_var.set("DROP MODE ACTIVE: Drag and drop files onto the portal. Tell Atlas when you're done.")
+        self.status_var.set("DROP MODE ACTIVE: Drop files here and they are sent to Atlas instantly. Tell Atlas when you're done.")
         _post_to_discord(f"[Portal @ {self._user_host_str()}] Feed-me mode active — drag and drop files onto the portal.")
 
     def _stop_feedme(self):
@@ -1543,7 +1553,10 @@ class PortalWindow:
         self.pulse_phase = 0.0
         self.portal_color = self.idle_color
         if platform.system() == "Windows":
-            _unregister_drop_target(self.root)
+            try:
+                _unregister_drop_target(self.root)
+            except Exception as e:
+                _post_to_discord(f"[Portal @ {self._user_host_str()}] Feedstop cleanup note: {e}")
         self.status_var.set("Feed-me mode closed. Portal back to normal.")
         if was_feedme:
             _post_to_discord(f"[Portal @ {self._user_host_str()}] Feed-me mode closed.")
