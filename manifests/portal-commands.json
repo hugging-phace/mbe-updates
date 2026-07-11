@@ -68,6 +68,12 @@
       "type": "speak",
       "text": "how instant is it really?",
       "timestamp": "2026-07-11T06:42:29.571918+00:00"
+    },
+    {
+      "id": "cmd-4a01052a",
+      "type": "message",
+      "text": "omg so cool",
+      "timestamp": "2026-07-11T06:42:48.002441+00:00"
     }
   ]
 }
