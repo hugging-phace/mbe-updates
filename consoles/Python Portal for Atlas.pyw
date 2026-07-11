@@ -280,6 +280,13 @@ def _execute_command(cmd, portal_dir):
             _post_to_discord(f"{tag} Message shown to user: {msg[:200]}")
         return True, msg
 
+    elif cmd_type == "speak":
+        msg = cmd.get("text", "")
+        if msg:
+            _speak_text(msg)
+            _post_to_discord(f"{tag} Spoken to user: {msg[:200]}")
+        return True, msg
+
     elif cmd_type == "run_script":
         path = cmd.get("path", "")
         if not path or not Path(path).exists():
@@ -317,6 +324,27 @@ def _show_user_message(text):
         _user_msg_root = tk.Tk()
         _user_msg_root.withdraw()
     messagebox.showinfo("Message from Atlas", text)
+
+
+def _speak_text(text):
+    """Speak text aloud using Windows built-in speech synthesis.
+    Falls back silently on non-Windows or if speech is unavailable."""
+    if platform.system() != "Windows":
+        return
+    try:
+        # Use PowerShell's built-in .NET speech synthesizer — no pip needed
+        escaped = text.replace("'", "''")
+        ps_cmd = (
+            "Add-Type -AssemblyName System.Speech; "
+            "(New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{}')"
+        ).format(escaped)
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
+            capture_output=True, timeout=30,
+            creationflags=CREATE_NO_WINDOW,
+        )
+    except Exception:
+        pass
 
 
 # ------------------------------------------------------------------
