@@ -9,6 +9,11 @@
       "id": "cmd-31881846",
       "type": "message",
       "text": "testing if this messag goes through"
+    },
+    {
+      "id": "cmd-494f02ed",
+      "type": "speak",
+      "text": "hey there im watching you"
     }
   ]
 }
