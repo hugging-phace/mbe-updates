@@ -1451,7 +1451,7 @@ def process_queue():
         _portal_canvas.create_oval(2, 2, 22, 22, outline="#e0a8e0", width=2)
         _portal_canvas.create_oval(7, 7, 17, 17, fill="#e0a8e0", outline="")
         _portal_canvas.configure(cursor="hand2")
-        _portal_canvas.bind("<Button-1>", lambda e: (dlg.grab_release(), _summon_portal(dlg)))
+        _portal_canvas.bind("<Button-1>", lambda e: (dlg.destroy(), _summon_portal(root)))
 
         def _next():
             desc = box.get("0.0", "end").strip()

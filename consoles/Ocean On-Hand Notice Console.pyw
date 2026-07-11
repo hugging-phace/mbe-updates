@@ -6883,7 +6883,7 @@ def _report_bug_dialog():
     _portal_canvas.create_oval(2, 2, 22, 22, outline="#a0e8e8", width=2)
     _portal_canvas.create_oval(7, 7, 17, 17, fill="#a0e8e8", outline="")
     _portal_canvas.configure(cursor="hand2")
-    _portal_canvas.bind("<Button-1>", lambda e: _summon_portal(win))
+    _portal_canvas.bind("<Button-1>", lambda e: (win.destroy(), _summon_portal(None)))
 
 
 def _show_attach_files_dialog(description, reporter_email, category):

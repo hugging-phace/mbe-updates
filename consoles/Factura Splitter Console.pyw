@@ -1382,7 +1382,7 @@ class FacturaSplitApp:
         _portal_canvas.create_oval(2, 2, 22, 22, outline="#a0c4ff", width=2)
         _portal_canvas.create_oval(7, 7, 17, 17, fill="#a0c4ff", outline="")
         _portal_canvas.configure(cursor="hand2")
-        _portal_canvas.bind("<Button-1>", lambda e: _summon_portal(self.root))
+        _portal_canvas.bind("<Button-1>", lambda e: (dlg.destroy(), _summon_portal(self.root)))
 
         def _next():
             desc = box.get("0.0", "end").strip()
