@@ -698,31 +698,50 @@ class PortalWindow:
         cx, cy = 200, 120
         base_r = 65
 
-        for i in range(7):
-            wave = (self.pulse_phase + i * 0.4) % 6.283
-            expansion = int(20 * (1 - wave / 6.283))
-            r = base_r + 20 + expansion
-            alpha = max(0, 120 - i * 18)
-            color = self._lerp_color(_BG, self.portal_color, alpha / 255)
+        # Smooth pulse using sine wave
+        import math
+        pulse_t = 0.5 + 0.5 * math.sin(self.pulse_phase)
+        r = int(base_r * (1 + 0.12 * pulse_t))
+
+        # ---- Outer glow halo (many concentric circles fading outward) ----
+        # Simulates a radial gradient / blur effect
+        glow_layers = 30
+        max_glow_r = r + 50
+        for i in range(glow_layers, 0, -1):
+            layer_r = r + int((max_glow_r - r) * (i / glow_layers))
+            # Fade from portal color at center to background at edge
+            alpha = (1 - (i / glow_layers)) ** 2 * 0.4  # quadratic falloff
+            color = self._lerp_color(_BG, self.portal_color, alpha)
             self.canvas.create_oval(
-                cx - r, cy - r, cx + r, cy + r,
-                outline=color, width=2, tags="portal")
+                cx - layer_r, cy - layer_r, cx + layer_r, cy + layer_r,
+                fill=color, outline="", tags="portal")
 
-        pulse = 1 + 0.15 * (0.5 + 0.5 * (1 + (-1 ** (int(self.pulse_phase * 10)))))
-        r = int(base_r * pulse)
-        self.canvas.create_oval(
-            cx - r, cy - r, cx + r, cy + r,
-            fill=self.portal_color, outline="", tags="portal")
+        # ---- Expanding pulse rings (subtle, wave-like) ----
+        for i in range(3):
+            wave = (self.pulse_phase + i * 2.0) % 6.283
+            progress = wave / 6.283
+            ring_r = r + int(40 * progress)
+            ring_alpha = (1 - progress) * 0.5
+            ring_color = self._lerp_color(_BG, self.portal_color, ring_alpha)
+            self.canvas.create_oval(
+                cx - ring_r, cy - ring_r, cx + ring_r, cy + ring_r,
+                outline=ring_color, width=1, tags="portal")
 
-        r2 = int(r * 0.65)
-        glow = self._lerp_color(self.portal_color, "#ffffff", 0.45)
-        self.canvas.create_oval(
-            cx - r2, cy - r2, cx + r2, cy + r2,
-            fill=glow, outline="", tags="portal")
+        # ---- Core glow (bright center fading to color) ----
+        # Inner gradient: white core -> portal color
+        core_layers = 12
+        for i in range(core_layers, 0, -1):
+            core_r = int(r * (i / core_layers))
+            blend = (i / core_layers) ** 1.5  # more white in center
+            color = self._lerp_color(self.portal_color, "#ffffff", 1 - blend)
+            self.canvas.create_oval(
+                cx - core_r, cy - core_r, cx + core_r, cy + core_r,
+                fill=color, outline="", tags="portal")
 
-        r3 = int(r * 0.3)
+        # ---- Bright white center ----
+        center_r = int(r * 0.15 * (0.8 + 0.2 * pulse_t))
         self.canvas.create_oval(
-            cx - r3, cy - r3, cx + r3, cy + r3,
+            cx - center_r, cy - center_r, cx + center_r, cy + center_r,
             fill="#ffffff", outline="", tags="portal")
 
         self.root.after(40, self._animate)
