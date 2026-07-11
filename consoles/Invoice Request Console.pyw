@@ -48,12 +48,6 @@ SMTP_SERVER = "smtp.office365.com"
 SMTP_PORT = 587
 KEYRING_SERVICE_NAME = "MBE_Automation_CBY"
 SENDER_EMAIL = "cby@mbe.ky"
-OPENROUTER_API_KEY = "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"
-OPENROUTER_MODELS = [
-    "openai/gpt-oss-20b:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "google/gemma-4-31b-it:free",
-]
 
 HELPFUL_LINKS_PRESETS = {
     "--- Select a Preset Link (Optional) ---": {"receiver_text": "", "url": ""},
@@ -772,7 +766,7 @@ def process_queue():
         if not current_text:
             return
 
-        ai_btn.configure(text="✦ Polishing...", fg_color=THEME_PURPLE, hover_color=THEME_PURPLE_HOVER, state="disabled")
+        ai_btn.configure(text="Polishing...", fg_color=THEME_PURPLE, hover_color=THEME_PURPLE_HOVER, state="disabled")
 
         words = current_text.split()
         
@@ -784,68 +778,21 @@ def process_queue():
             return
 
         def make_call():
-            last_error = None
-            for model in OPENROUTER_MODELS:
-                try:
-                    url = "https://openrouter.ai/api/v1/chat/completions"
-                    prompt = f"""You are a grammar and clarity assistant. Your task is to improve the grammar, spelling, punctuation, capitalization, and readability of the following text.
-
-IMPORTANT RULES:
-- Prioritize grammar and clarity corrections over content rewriting
-- Prefer minimal edits whenever possible
-- Do NOT substantially rewrite text unless necessary for clarity
-- Preserve the user's original wording whenever possible
-- Preserve the user's intent exactly
-- Do NOT write a subject line
-- Do NOT write greetings (Hi, Dear, etc.)
-- Do NOT write names or placeholders like [Name]
-- Do NOT write signoffs (Best regards, Sincerely, etc.)
-- Do NOT write a complete email
-- NEVER use "I" in sentences
-- Only use "we" if absolutely necessary in longer sentences
-- NEVER invent package numbers, tracking numbers, order numbers, invoice numbers, customer names, shipment details, dates, or monetary values
-- NEVER add information that does not exist in the original text
-- Only use information explicitly provided by the user
-- Preserve package numbers exactly as written
-- Preserve tracking numbers exactly as written
-- Preserve links exactly as written
-- Preserve any identifiers exactly as written
-- Return ONLY the revised text, nothing else
-
-Text to improve:
-{current_text}"""
-
-                    payload = {
-                        "model": model,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 500,
-                    }
-
-                    req = urllib.request.Request(
-                        url, data=json.dumps(payload).encode("utf-8"),
-                        headers={"Content-Type": "application/json",
-                                 "Authorization": f"Bearer {OPENROUTER_API_KEY}"})
-                    with urllib.request.urlopen(req, timeout=60) as response:
-                        res_data = json.loads(response.read().decode())
-                        polished = res_data["choices"][0]["message"]["content"]
-
-                        if not polished or not polished.strip():
-                            raise Exception("Empty response from API")
-
-                    root.after(0, lambda p=polished: start_text_fade(lambda: update_reason(p)))
-                    return
-                except urllib.error.HTTPError as e:
-                    last_error = f"{model}: HTTP {e.code}"
-                    if e.code == 429:
-                        continue  # try next model
-                    body = e.read().decode()[:200]
-                    last_error = f"{model}: HTTP {e.code} - {body}"
-                    break  # non-rate-limit error, don't retry
-                except Exception as e:
-                    last_error = f"{model}: {e}"
-                    continue  # try next model
-
-            root.after(0, lambda e=last_error or "All models failed": handle_ai_failure(e))
+            try:
+                from textblob import TextBlob
+                # TextBlob spell correction + basic capitalization
+                blob = TextBlob(current_text)
+                polished = str(blob.correct())
+                # Capitalize first letter of each sentence
+                sentences = polished.split('. ')
+                polished = '. '.join(s[0].upper() + s[1:] if s else s for s in sentences)
+                polished = polished.strip()
+                if not polished:
+                    raise Exception("Empty result from TextBlob")
+                root.after(0, lambda p=polished: start_text_fade(lambda: update_reason(p)))
+            except Exception as e:
+                err = str(e)
+                root.after(0, lambda e=err: handle_ai_failure(e))
 
         threading.Thread(target=make_call, daemon=True).start()
 
@@ -884,10 +831,10 @@ Text to improve:
         reason_text.configure(text_color=DEFAULT_WHITE)
         
         # Turn the button Red and flag it as Unavailable
-        ai_btn.configure(text="AI Unavailable", fg_color="#dc3545", hover_color="#c82333", state="disabled")
+        ai_btn.configure(text="Polish Unavailable", fg_color="#dc3545", hover_color="#c82333", state="disabled")
         
         def reset_ai_button():
-            ai_btn.configure(text="Polish with AI", fg_color=THEME_PURPLE, hover_color=THEME_PURPLE_HOVER, state="normal")
+            ai_btn.configure(text="Polish Message", fg_color=THEME_PURPLE, hover_color=THEME_PURPLE_HOVER, state="normal")
             
         # Keep it locked in red state for 3 seconds so they read it, then reset back to purple
         root.after(3000, reset_ai_button)
@@ -1172,7 +1119,7 @@ Text to improve:
     
     ctk.CTkLabel(reason_header, text="Reason:", font=(MODERN_FONT, 12)).pack(side="left", anchor="nw")
     
-    ai_btn = ctk.CTkButton(reason_header, text="Polish with AI", command=polish_text_thread, width=110, height=26, fg_color=THEME_PURPLE, hover_color=THEME_PURPLE_HOVER, font=(MODERN_FONT, 11, "bold"), corner_radius=6)
+    ai_btn = ctk.CTkButton(reason_header, text="Polish Message", command=polish_text_thread, width=110, height=26, fg_color=THEME_PURPLE, hover_color=THEME_PURPLE_HOVER, font=(MODERN_FONT, 11, "bold"), corner_radius=6)
     ai_btn.pack(side="right", anchor="ne")
     
     reason_text = ctk.CTkTextbox(reason_frame, height=60, corner_radius=6, border_width=1, border_color="#3a3f44", fg_color="#2a2a2a", text_color=DEFAULT_WHITE)
