@@ -279,77 +279,101 @@ class PortalWindow:
                  justify="center").pack(side="right")
 
         # ---- Chat sidebar (right, hidden initially) ----
-        self.chat_frame = tk.Frame(root, bg=_CHAT_BG, width=280, height=360)
+        self.chat_frame = tk.Frame(root, bg=_CHAT_BG, width=300, height=360)
         # Not packed yet — shown when _toggle_chat or message arrives
 
         # Chat header
-        chat_header = tk.Frame(self.chat_frame, bg=_PANEL, height=32)
+        chat_header = tk.Frame(self.chat_frame, bg=_PANEL, height=34)
         chat_header.pack(side="top", fill="x")
         chat_header.pack_propagate(False)
 
         tk.Label(chat_header, text="Atlas",
                  font=("Segoe UI", 11, "bold"), bg=_PANEL, fg=_TEXT,
-                 ).pack(side="left", padx=(10, 0), pady=4)
+                 ).pack(side="left", padx=(10, 0), pady=5)
 
         # Mute button
         self.mute_btn = tk.Button(chat_header, text="\U0001F50A",
                                    command=self._toggle_mute,
                                    bg=_PANEL, fg=_TEXT, relief="flat",
                                    bd=0, cursor="hand2", font=("Segoe UI", 12))
-        self.mute_btn.pack(side="right", padx=(0, 4), pady=2)
+        self.mute_btn.pack(side="right", padx=(0, 4), pady=3)
 
         # Close sidebar button
         tk.Button(chat_header, text="\u2715",
                   command=self._hide_chat,
                   bg=_PANEL, fg=_MUTED, relief="flat",
                   bd=0, cursor="hand2", font=("Segoe UI", 10)).pack(
-                      side="right", padx=(0, 2), pady=2)
+                      side="right", padx=(0, 2), pady=3)
 
-        # Chat messages area
-        self.chat_text = tk.Text(self.chat_frame, wrap="word",
-                                  bg=_CHAT_BG, fg=_TEXT,
-                                  font=("Segoe UI", 10),
-                                  relief="flat", bd=0,
-                                  padx=10, pady=8,
-                                  state="disabled",
-                                  highlightthickness=0)
-        self.chat_text.pack(side="top", fill="both", expand=True)
+        # Chat messages area — scrollable canvas for bubble rendering
+        chat_scroll_frame = tk.Frame(self.chat_frame, bg=_CHAT_BG)
+        chat_scroll_frame.pack(side="top", fill="both", expand=True)
 
-        # Tag styles for chat bubbles
-        self.chat_text.tag_config("atlas_name", foreground=_ACCENT,
-                                   font=("Segoe UI", 8, "bold"))
-        self.chat_text.tag_config("user_name", foreground="#5b9bd5",
-                                   font=("Segoe UI", 8, "bold"))
-        self.chat_text.tag_config("atlas_msg", foreground=_TEXT,
+        self.chat_canvas = tk.Canvas(chat_scroll_frame, bg=_CHAT_BG,
+                                      highlightthickness=0)
+        self.chat_scrollbar = tk.Scrollbar(chat_scroll_frame,
+                                            command=self.chat_canvas.yview,
+                                            bg=_CHAT_BG,
+                                            troughcolor=_CHAT_BG,
+                                            borderwidth=0,
+                                            activebackground=_PANEL)
+        self.chat_scrollbar.pack(side="right", fill="y")
+        self.chat_canvas.pack(side="left", fill="both", expand=True)
+        self.chat_canvas.configure(yscrollcommand=self.chat_scrollbar.set)
+
+        # Inner frame that holds the bubble widgets
+        self.chat_inner = tk.Frame(self.chat_canvas, bg=_CHAT_BG)
+        self.chat_inner_window = self.chat_canvas.create_window(
+            (0, 0), window=self.chat_inner, anchor="n")
+        self.chat_inner.bind("<Configure>", self._on_chat_inner_configure)
+        self.chat_canvas.bind("<Configure>", self._on_chat_canvas_configure)
+
+        # Track bubbles for layout
+        self._chat_bubbles = []
+        self._bubble_count = 0
+
+        # ---- Floating input box (detached from corners) ----
+        self.input_container = tk.Frame(self.chat_frame, bg=_CHAT_BG)
+        self.input_container.pack(side="bottom", fill="x", padx=12, pady=(4, 10))
+
+        # Input frame with rounded look (using flat bg + padding)
+        self.input_wrapper = tk.Frame(self.input_container, bg=_CHAT_ENTRY_BG,
+                                       highlightthickness=1,
+                                       highlightbackground=_CHAT_BORDER,
+                                       highlightcolor=_CHAT_BORDER)
+        self.input_wrapper.pack(fill="x", padx=0, pady=0)
+
+        # Auto-growing text widget for input
+        self.chat_input = tk.Text(self.input_wrapper, wrap="word",
+                                   bg=_CHAT_ENTRY_BG, fg=_TEXT,
+                                   insertbackground=_TEXT,
                                    font=("Segoe UI", 10),
-                                   lmargin1=10, lmargin2=10)
-        self.chat_text.tag_config("user_msg", foreground="#c8d6e5",
-                                   font=("Segoe UI", 10),
-                                   lmargin1=10, lmargin2=10)
-        self.chat_text.tag_config("system", foreground=_MUTED,
-                                   font=("Segoe UI", 8, "italic"))
-        self.chat_text.tag_config("spacer", font=("Segoe UI", 4))
+                                   relief="flat", bd=0,
+                                   padx=10, pady=8,
+                                   height=1,
+                                   highlightthickness=0)
+        self.chat_input.pack(side="left", fill="x", expand=True)
+        self.chat_input.bind("<KeyRelease>", self._on_input_change)
+        self.chat_input.bind("<Return>", lambda e: self._send_user_message())
+        # Shift+Return for newline (default behaviour, but explicit)
+        self.chat_input.bind("<Shift-Return>", lambda e: None)
 
-        # Chat input area
-        input_frame = tk.Frame(self.chat_frame, bg=_CHAT_ENTRY_BG, height=36)
-        input_frame.pack(side="bottom", fill="x")
-        input_frame.pack_propagate(False)
+        # Send button
+        send_btn = tk.Button(self.input_wrapper, text="\u279C",
+                             command=self._send_user_message,
+                             bg=_CHAT_ENTRY_BG, fg=_ACCENT, relief="flat",
+                             bd=0, cursor="hand2",
+                             font=("Segoe UI", 14))
+        send_btn.pack(side="right", padx=(4, 8), pady=6)
 
-        self.chat_entry = tk.Entry(input_frame, bg=_CHAT_ENTRY_BG, fg=_TEXT,
-                                    insertbackground=_TEXT,
-                                    font=("Segoe UI", 10), relief="flat",
-                                    bd=0)
-        self.chat_entry.pack(side="left", fill="x", expand=True,
-                              padx=(10, 4), pady=8)
-        self.chat_entry.bind("<Return>", lambda e: self._send_user_message())
-
-        tk.Button(input_frame, text="\u279C", command=self._send_user_message,
-                  bg=_CHAT_ENTRY_BG, fg=_ACCENT, relief="flat",
-                  bd=0, cursor="hand2",
-                  font=("Segoe UI", 14)).pack(side="right", padx=(0, 8), pady=4)
+        # Hint text below input
+        tk.Label(self.input_container,
+                 text="Enter to send \u00b7 Shift+Enter for new line",
+                 font=("Segoe UI", 7), bg=_CHAT_BG, fg=_MUTED,
+                 ).pack(anchor="w", padx=4, pady=(2, 0))
 
         # Adjust window width when chat is shown
-        self._chat_open_width = 680
+        self._chat_open_width = 700
         self._chat_closed_width = 400
 
         # Track when portal was opened
@@ -382,7 +406,7 @@ class PortalWindow:
             self.root.geometry(f"{self._chat_open_width}x360")
             self.chat_visible = True
             self._draw_chat_bubble(False)
-            self.chat_entry.focus_set()
+            self.chat_input.focus_set()
 
     def _hide_chat(self):
         if self.chat_visible:
@@ -396,34 +420,84 @@ class PortalWindow:
         self.mute_btn.configure(
             text="\U0001F507" if self.muted else "\U0001F50A")
 
-    # ---- Chat messages ----
+    # ---- Chat canvas scrolling ----
+    def _on_chat_inner_configure(self, event):
+        """Update scroll region when inner frame changes size."""
+        self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
+
+    def _on_chat_canvas_configure(self, event):
+        """Adjust inner frame width to match canvas width."""
+        self.chat_canvas.itemconfig(self.chat_inner_window, width=event.width)
+
+    # ---- Chat bubbles ----
     def _add_chat_message(self, sender, text, is_atlas=True):
-        """Add a message to the chat text widget."""
-        self.chat_text.configure(state="normal")
-        self.chat_text.insert("end", "\n")
+        """Add a chat bubble to the message area."""
+        bubble_bg = _CHAT_BUBBLE_ATLAS if is_atlas else _CHAT_BUBBLE_USER
+        name_color = _ACCENT if is_atlas else "#5b9bd5"
+        name_label = "Atlas" if is_atlas else "You"
+
+        # Container for this bubble (full width row)
+        row = tk.Frame(self.chat_inner, bg=_CHAT_BG)
+        row.pack(fill="x", padx=8, pady=(6, 2))
+
         if is_atlas:
-            self.chat_text.insert("end", "Atlas\n", "atlas_name")
-            self.chat_text.insert("end", text + "\n", "atlas_msg")
+            # Atlas messages: left-aligned
+            bubble = tk.Frame(row, bg=bubble_bg, padx=12, pady=8)
+            bubble.pack(side="left", anchor="w")
         else:
-            self.chat_text.insert("end", "You\n", "user_name")
-            self.chat_text.insert("end", text + "\n", "user_msg")
-        self.chat_text.insert("end", "\n", "spacer")
-        self.chat_text.see("end")
-        self.chat_text.configure(state="disabled")
+            # User messages: right-aligned
+            bubble = tk.Frame(row, bg=bubble_bg, padx=12, pady=8)
+            bubble.pack(side="right", anchor="e")
+
+        # Name label
+        tk.Label(bubble, text=name_label, font=("Segoe UI", 8, "bold"),
+                 bg=bubble_bg, fg=name_color).pack(anchor="w")
+
+        # Message text
+        msg_label = tk.Label(bubble, text=text, font=("Segoe UI", 10),
+                             bg=bubble_bg, fg=_TEXT, wraplength=200,
+                             justify="left")
+        msg_label.pack(anchor="w")
+
+        # Timestamp
+        ts = datetime.now().strftime("%H:%M")
+        tk.Label(bubble, text=ts, font=("Segoe UI", 7),
+                 bg=bubble_bg, fg=_MUTED).pack(anchor="w", pady=(2, 0))
+
+        self._bubble_count += 1
+        self._chat_bubbles.append(bubble)
+
+        # Auto-scroll to bottom
+        self.chat_canvas.update_idletasks()
+        self.chat_canvas.yview_moveto(1.0)
 
     def _add_system_message(self, text):
-        self.chat_text.configure(state="normal")
-        self.chat_text.insert("end", text + "\n", "system")
-        self.chat_text.insert("end", "\n", "spacer")
-        self.chat_text.see("end")
-        self.chat_text.configure(state="disabled")
+        """Add a centered system message (no bubble)."""
+        row = tk.Frame(self.chat_inner, bg=_CHAT_BG)
+        row.pack(fill="x", padx=8, pady=(8, 4))
+        tk.Label(row, text=text, font=("Segoe UI", 8, "italic"),
+                 bg=_CHAT_BG, fg=_MUTED, wraplength=240,
+                 justify="center").pack()
+        self.chat_canvas.update_idletasks()
+        self.chat_canvas.yview_moveto(1.0)
+
+    # ---- Input auto-grow ----
+    def _on_input_change(self, event=None):
+        """Auto-grow the input text widget as the user types."""
+        content = self.chat_input.get("1.0", "end-1c")
+        lines = content.count("\n") + 1
+        # Cap at 5 lines
+        new_height = min(max(1, lines), 5)
+        if self.chat_input.cget("height") != new_height:
+            self.chat_input.configure(height=new_height)
 
     def _send_user_message(self):
         """Send user's chat message to Discord."""
-        msg = self.chat_entry.get().strip()
+        msg = self.chat_input.get("1.0", "end-1c").strip()
         if not msg:
             return
-        self.chat_entry.delete(0, "end")
+        self.chat_input.delete("1.0", "end")
+        self.chat_input.configure(height=1)
         self._add_chat_message("You", msg, is_atlas=False)
 
         # Send to Discord
