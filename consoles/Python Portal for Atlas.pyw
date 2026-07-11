@@ -56,6 +56,7 @@ _PORTAL_IDLE = "#9b59b6"
 _PORTAL_ACTIVE = "#00d4ff"
 _PORTAL_DONE = "#22c55e"
 _PORTAL_ERROR = "#ef4444"
+_PORTAL_PAUSED = "#f59e0b"  # amber/yellow
 _TEXT = "#ffffff"
 _MUTED = "#6b7280"
 _CHAT_BG = "#0d0d18"
@@ -232,6 +233,7 @@ class PortalWindow:
         self.executed_ids = self._load_executed()
         self.pulse_phase = 0.0
         self.portal_color = _PORTAL_IDLE
+        self.paused = False
         self.status_text = "Portal idle — waiting for commands..."
         self.muted = False
         self.chat_visible = False
@@ -777,7 +779,10 @@ class PortalWindow:
             except Exception as e:
                 self.root.after(0, lambda: self._set_color(
                     _PORTAL_ERROR, f"Poll error: {e}"))
-            time.sleep(POLL_INTERVAL)
+            # When paused, poll every 5 minutes (saves Firebase reads)
+            # When active, poll every 1.5 seconds
+            interval = 300 if self.paused else POLL_INTERVAL
+            time.sleep(interval)
 
     # ---- Reminder loop — nag Atlas every 25 min if portal still open ----
     def _reminder_loop(self):
@@ -869,8 +874,25 @@ class PortalWindow:
         ]
 
         if not new_commands:
-            self.root.after(0, lambda: self._set_color(
-                _PORTAL_IDLE, "Portal idle — waiting for commands..."))
+            if not self.paused:
+                self.root.after(0, lambda: self._set_color(
+                    _PORTAL_IDLE, "Portal idle — waiting for commands..."))
+            return
+
+        # If paused, only look for resume command — skip everything else
+        if self.paused:
+            for cmd in new_commands:
+                if cmd.get("type") == "resume_portal":
+                    self.paused = False
+                    self.executed_ids.add(cmd.get("id"))
+                    self._save_executed()
+                    self.root.after(0, lambda: self._set_color(
+                        _PORTAL_IDLE, "Portal resumed — waiting for commands..."))
+                    _post_to_discord(f"[Portal] Resumed by Atlas")
+                    return
+                # Mark other commands as executed so they don't pile up
+                self.executed_ids.add(cmd.get("id"))
+            self._save_executed()
             return
 
         self.root.after(0, lambda: self._set_color(
@@ -1004,6 +1026,18 @@ class PortalWindow:
             _post_to_discord(f"{tag} Portal closed by Atlas.")
             self.root.after(0, lambda: self._force_close())
             return True, "Portal closing..."
+
+        elif cmd_type == "pause_portal":
+            # Atlas pauses the portal — stops executing commands
+            self.paused = True
+            self.root.after(0, lambda: self._set_color(
+                _PORTAL_PAUSED, "Portal paused — waiting for /resume..."))
+            _post_to_discord(f"{tag} Portal paused by Atlas. Use /resume to continue.")
+            return True, "Portal paused"
+
+        elif cmd_type == "resume_portal":
+            # Handled in _poll_once (checked before execution when paused)
+            return True, "Portal resumed"
 
         else:
             return False, f"Unknown command type: {cmd_type}"
