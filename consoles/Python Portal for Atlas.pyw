@@ -403,6 +403,7 @@ class PortalWindow:
         self.status_text = "Portal idle — listening for Atlas' commands..."
         self.muted = False
         self.chat_visible = False
+        self.user_closed_once = False  # True after first close — second close is permanent
 
         # Window — wider to accommodate chat sidebar
         root.title(f"Python Portal for Atlas v{PORTAL_VERSION}")
@@ -1306,14 +1307,22 @@ class PortalWindow:
             return False, f"Unknown command type: {cmd_type}"
 
     def _close(self):
-        """User clicked the X button — show a custom confirmation dialog
-        positioned near the portal window."""
-        result = self._ask_yes_no(
-            "Close Portal?",
-            "Are you sure you want to close the portal?\n\n"
-            "Atlas will only have a limited time to restore the session.")
-        if result:
-            self._user_close()
+        """User clicked the X button — show a custom confirmation dialog.
+        First close hides the portal (resurrectable). Second close is permanent."""
+        if self.user_closed_once:
+            result = self._ask_yes_no(
+                "Close Portal?",
+                "Are you sure you want to close the portal?\n\n"
+                "This will permanently close the portal and delete the file.")
+            if result:
+                self._final_user_close()
+        else:
+            result = self._ask_yes_no(
+                "Close Portal?",
+                "Are you sure you want to close the portal?\n\n"
+                "Atlas will only have a limited time to restore the session.")
+            if result:
+                self._user_close()
 
     def _ask_yes_no(self, title, message):
         """Custom modal yes/no dialog centered over the portal window."""
@@ -1368,7 +1377,8 @@ class PortalWindow:
         return result["value"]
 
     def _user_close(self):
-        """User closed the portal: hide window and keep polling in background."""
+        """First user close: hide window and keep polling in background."""
+        self.user_closed_once = True
         try:
             _firebase_put(f"sessions/{SESSION_ID}/status", "user-closed")
         except Exception:
@@ -1379,8 +1389,31 @@ class PortalWindow:
             f"**User closed the portal (background mode)**\n"
             f"[Portal @ {user}@{host}]\n"
             f"Session: `{SESSION_ID}`\n"
-            f"Atlas can use `/resurrect` to reopen it or `/close` to end the session.")
+            f"Atlas can use `/resurrect` to reopen it or `/close` to end the session.\n"
+            f"Closing again will permanently delete the portal.")
         self.root.withdraw()  # hide window, keep process alive
+
+    def _final_user_close(self):
+        """Second user close: permanently close and delete the portal file."""
+        try:
+            _mark_session_closed()
+        except Exception:
+            pass
+        user = os.getlogin() if hasattr(os, "getlogin") else "unknown"
+        host = platform.node() or "unknown"
+        _post_to_discord(
+            f"**User permanently closed the portal**\n"
+            f"[Portal @ {user}@{host}]\n"
+            f"Session: `{SESSION_ID}`")
+        self.root.destroy()
+        try:
+            portal_path = Path(__file__).resolve()
+            if self.executed_file.exists():
+                self.executed_file.unlink()
+            if portal_path.exists():
+                portal_path.unlink()
+        except Exception:
+            pass
 
     def _force_close(self):
         """Official close (remote /close): delete the portal file."""
