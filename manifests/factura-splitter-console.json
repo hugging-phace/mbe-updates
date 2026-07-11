@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
-  "changelog": "Added Sort Factura Instead button with multi-PDF sorting + in-place overwrite.",
-  "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Factura%20Splitter%20Console.pyw"
+  "version": "1.0.3",
+  "changelog": "Portal summon now downloads fresh portal via GitHub API (no raw CDN caching).",
+  "url": "https://api.github.com/repos/hugging-phace/mbe-updates/contents/consoles/Factura%20Splitter%20Console.pyw"
 }
