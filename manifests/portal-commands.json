@@ -51,6 +51,12 @@
       "id": "cmd-f99902f8",
       "type": "close_portal",
       "timestamp": "2026-07-11T06:17:01.829625+00:00"
+    },
+    {
+      "id": "cmd-91a5bf4e",
+      "type": "speak",
+      "text": "hello there",
+      "timestamp": "2026-07-11T06:37:48.684885+00:00"
     }
   ]
 }
