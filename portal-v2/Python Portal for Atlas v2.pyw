@@ -2351,6 +2351,8 @@ class ModernPortalWindow(QWidget):
         self.status_label = QLabel("Awaiting Rift connection")
         self.status_label.setFont(QFont("Segoe UI", 9))
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setWordWrap(True)
+        self.status_label.setFixedWidth(220)
         self.status_label.setStyleSheet(f"color: {PALETTE['muted']}; background: transparent; border: none;")
         layout.addWidget(self.status_label)
 

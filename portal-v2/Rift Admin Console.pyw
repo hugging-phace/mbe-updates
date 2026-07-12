@@ -2255,7 +2255,7 @@ class ZipDownloadBox(BlackGlassPanel):
 class RiftConfirmDialog(QDialog):
     """On-theme confirmation dialog with a title, message, and two buttons."""
 
-    def __init__(self, title, message, confirm_text="Yes", cancel_text="Cancel", parent=None):
+    def __init__(self, title, message, confirm_text="Yes", cancel_text="Cancel", danger=False, parent=None):
         super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFixedSize(420, 200)
@@ -2310,15 +2310,26 @@ class RiftConfirmDialog(QDialog):
         confirm_btn.setFixedHeight(32)
         confirm_btn.setFont(QFont(ADMIN_MONO, 8, QFont.Weight.Bold))
         confirm_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        confirm_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: rgba(154, 89, 182, 35);
-                color: {PALETTE['accent_bright']};
-                border: 1px solid rgba(154, 89, 182, 60);
-                border-radius: 6px;
-            }}
-            QPushButton:hover {{ background: rgba(154, 89, 182, 55); }}
-        """)
+        if danger:
+            confirm_btn.setStyleSheet("""
+                QPushButton {
+                    background: rgba(220, 60, 60, 35);
+                    color: #ff8a8a;
+                    border: 1px solid rgba(220, 60, 60, 60);
+                    border-radius: 6px;
+                }
+                QPushButton:hover { background: rgba(220, 60, 60, 55); }
+            """)
+        else:
+            confirm_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: rgba(154, 89, 182, 35);
+                    color: {PALETTE['accent_bright']};
+                    border: 1px solid rgba(154, 89, 182, 60);
+                    border-radius: 6px;
+                }}
+                QPushButton:hover {{ background: rgba(154, 89, 182, 55); }}
+            """)
         confirm_btn.clicked.connect(self.accept)
 
         btn_layout.addWidget(cancel_btn)
@@ -5081,6 +5092,19 @@ class RiftAdminConsole(QWidget):
         dialog.move(self.mapToGlobal(self.rect().center() - dialog.rect().center()))
         return dialog.exec() == QDialog.DialogCode.Accepted
 
+    def _confirm_close_session(self):
+        """Ask the admin if they're sure they want to close/end the current session."""
+        dialog = RiftConfirmDialog(
+            "Close Session?",
+            "This will permanently end the current session for the user. Any unsaved files or screenshots may be lost.",
+            confirm_text="Close Session",
+            cancel_text="Stay",
+            danger=True,
+            parent=self
+        )
+        dialog.move(self.mapToGlobal(self.rect().center() - dialog.rect().center()))
+        return dialog.exec() == QDialog.DialogCode.Accepted
+
     def _back_to_list(self):
         if self._current_session and not self._confirm_leave_session():
             return
@@ -5093,7 +5117,7 @@ class RiftAdminConsole(QWidget):
 
     def _close_session(self, session_id):
         """Close/end a session — sends force_close and returns to list."""
-        if self._current_session and not self._confirm_leave_session():
+        if self._current_session and not self._confirm_close_session():
             return
         # Send force_close command to the portal
         send_command_to_session(session_id, "force_close")
@@ -5382,7 +5406,18 @@ class RiftAdminConsole(QWidget):
         self._session_list.update_uptime(elapsed)
 
     def closeEvent(self, event):
-        """Clean up background threads on close."""
+        """Confirm before closing, then clean up background threads."""
+        dialog = RiftConfirmDialog(
+            "Close Rift Admin Console?",
+            "Are you sure you want to close the admin console?",
+            confirm_text="Close",
+            cancel_text="Cancel",
+            parent=self
+        )
+        dialog.move(self.mapToGlobal(self.rect().center() - dialog.rect().center()))
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            event.ignore()
+            return
         try:
             self._firebase_worker.stop()
             self._firebase_thread.quit()
@@ -5448,7 +5483,8 @@ class RiftAdminConsole(QWidget):
                 self._resize_edge = edges
                 self._resize_start_geo = self.geometry()
                 self._resize_start_mouse = event.globalPosition().toPoint()
-            else:
+            elif event.position().y() <= 60:
+                # Only allow dragging from the top bar area (sidebar header / content top)
                 self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
 
