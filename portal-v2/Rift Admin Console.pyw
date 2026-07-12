@@ -5,6 +5,7 @@ Controls portal instances, sends commands, views screenshots, chats.
 Aesthetic: dark glass sidebar + black glass main area with techny accents.
 """
 
+import io
 import json
 import math
 import os
@@ -12,6 +13,7 @@ import random
 import sys
 import time
 import urllib.request
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -1881,6 +1883,7 @@ class Session:
         self.results = []           # list of dicts: {type, title, content, timestamp, collapsed}
         self._seen_chat_ids = set()
         self._seen_result_ids = set()
+        self._close_alert_added = False
         self.opened_at = ""
         self.last_seen = ""
         self.card_state = "inactive"
@@ -2170,6 +2173,173 @@ class ImagePopoutDialog(QDialog):
         w = max(self.MIN_W, int(img_w * scale) + self.PAD)
         h = max(self.MIN_H, int(img_h * scale) + self.PAD)
         self.resize(w, h)
+
+
+class ZipDownloadBox(BlackGlassPanel):
+    """Alert box shown when a session is closed, offering a zip of all shared files/screenshots."""
+
+    def __init__(self, session, parent=None):
+        super().__init__(parent, radius=8, border_color=(220, 60, 60, 50))
+        self._session = session
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
+
+        header = QLabel("  !  User closed this Rift")
+        header.setFont(QFont(ADMIN_MONO, 9, QFont.Weight.Bold))
+        header.setStyleSheet(f"color: {PALETTE['error']}; background: transparent; border: none;")
+        layout.addWidget(header)
+
+        msg = QLabel("Save any important documents before closing this session or exiting.")
+        msg.setFont(QFont(ADMIN_MONO, 8))
+        msg.setStyleSheet(f"color: {PALETTE['text']}; background: transparent; border: none;")
+        msg.setWordWrap(True)
+        layout.addWidget(msg)
+
+        download_btn = QPushButton("Download Zip")
+        download_btn.setFixedHeight(30)
+        download_btn.setFont(QFont(ADMIN_MONO, 8, QFont.Weight.Bold))
+        download_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        download_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(220, 60, 60, 25);
+                color: {PALETTE['error']};
+                border: 1px solid rgba(220, 60, 60, 60);
+                border-radius: 4px;
+                padding: 0 14px;
+            }}
+            QPushButton:hover {{ background: rgba(220, 60, 60, 45); }}
+        """)
+        download_btn.clicked.connect(self._download_zip)
+        layout.addWidget(download_btn)
+
+    def _download_zip(self):
+        try:
+            files = []  # list of (filename, bytes)
+            screenshot_idx = 0
+            for r in self._session.results:
+                if r["type"] in ("file", "file_drop"):
+                    payload = r.get("content", {})
+                    if isinstance(payload, dict):
+                        path = payload.get("file", "")
+                        data = payload.get("data", "")
+                        if data:
+                            name = Path(path).name or f"file_{len(files) + 1}"
+                            files.append((name, _b64.b64decode(data)))
+                elif r["type"] == "files":
+                    payload = r.get("content", {})
+                    if isinstance(payload, dict):
+                        for rel, b64_data in payload.get("files", {}).items():
+                            if b64_data:
+                                files.append((rel, _b64.b64decode(b64_data)))
+                elif r["type"] == "screenshot" and isinstance(r.get("content"), str) and r["content"] != "Received":
+                    screenshot_idx += 1
+                    files.append((f"screenshot_{screenshot_idx}.png", _b64.b64decode(r["content"])))
+
+            if not files:
+                return
+
+            default_name = f"rift_{self._session.id}_files.zip"
+            path, _ = QFileDialog.getSaveFileName(self, "Save Zip", default_name, "Zip files (*.zip)")
+            if not path:
+                return
+
+            with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for name, data in files:
+                    zf.writestr(name, data)
+        except Exception:
+            pass
+
+
+class RiftConfirmDialog(QDialog):
+    """On-theme confirmation dialog with a title, message, and two buttons."""
+
+    def __init__(self, title, message, confirm_text="Yes", cancel_text="Cancel", parent=None):
+        super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedSize(420, 200)
+        self._confirmed = False
+
+        container = QFrame(self)
+        container.setGeometry(0, 0, 420, 200)
+        container.setStyleSheet(f"""
+            QFrame {{
+                background-color: rgba(18, 17, 30, 245);
+                border: 1px solid rgba(154, 89, 182, 50);
+                border-radius: 16px;
+            }}
+        """)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(14)
+
+        title_lbl = QLabel(title)
+        title_lbl.setFont(QFont(ADMIN_MONO, 11, QFont.Weight.Bold))
+        title_lbl.setStyleSheet(f"color: {PALETTE['text']}; background: transparent; border: none;")
+        title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title_lbl)
+
+        msg_lbl = QLabel(message)
+        msg_lbl.setFont(QFont(ADMIN_MONO, 9))
+        msg_lbl.setStyleSheet(f"color: {PALETTE['muted']}; background: transparent; border: none;")
+        msg_lbl.setWordWrap(True)
+        msg_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(msg_lbl, 1)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(12)
+
+        cancel_btn = QPushButton(cancel_text)
+        cancel_btn.setFixedHeight(32)
+        cancel_btn.setFont(QFont(ADMIN_MONO, 8, QFont.Weight.Bold))
+        cancel_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 255, 255, 12);
+                color: {PALETTE['muted']};
+                border: 1px solid rgba(255, 255, 255, 25);
+                border-radius: 6px;
+            }}
+            QPushButton:hover {{ background: rgba(255, 255, 255, 22); color: {PALETTE['text']}; }}
+        """)
+        cancel_btn.clicked.connect(self.reject)
+
+        confirm_btn = QPushButton(confirm_text)
+        confirm_btn.setFixedHeight(32)
+        confirm_btn.setFont(QFont(ADMIN_MONO, 8, QFont.Weight.Bold))
+        confirm_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        confirm_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(154, 89, 182, 35);
+                color: {PALETTE['accent_bright']};
+                border: 1px solid rgba(154, 89, 182, 60);
+                border-radius: 6px;
+            }}
+            QPushButton:hover {{ background: rgba(154, 89, 182, 55); }}
+        """)
+        confirm_btn.clicked.connect(self.accept)
+
+        btn_layout.addWidget(cancel_btn)
+        btn_layout.addWidget(confirm_btn)
+        layout.addLayout(btn_layout)
+
+        self._drag_pos = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        event.accept()
 
 
 class FileResultBox(BlackGlassPanel):
@@ -3295,6 +3465,12 @@ class SessionDetailView(QWidget):
         QTimer.singleShot(10, lambda: self._results_scroll.verticalScrollBar().setValue(
             self._results_scroll.verticalScrollBar().maximum()))
 
+    def add_close_alert(self, session):
+        box = ZipDownloadBox(session, self._results_container)
+        self._results_layout.insertWidget(self._results_layout.count() - 1, box)
+        QTimer.singleShot(10, lambda: self._results_scroll.verticalScrollBar().setValue(
+            self._results_scroll.verticalScrollBar().maximum()))
+
     def add_screenshot(self, pixmap, title="Screenshot"):
         shot_widget = BlackGlassPanel(self._results_container, radius=8, border_color=(220, 200, 40, 40))
         sl = QVBoxLayout(shot_widget)
@@ -3379,6 +3555,8 @@ class SessionDetailView(QWidget):
                         self.add_screenshot(pm, r["title"])
                     except Exception:
                         self.add_result("error", f"Screenshot load failed: {r['title']}", "")
+                elif r["type"] == "close_alert":
+                    self.add_close_alert(r["content"])
                 else:
                     self.add_result(r["type"], r["title"], r["content"])
 
@@ -4742,6 +4920,12 @@ class RiftAdminConsole(QWidget):
         has_active = any(s.status == "active" for s in new_sessions)
         self._set_orb_connected(has_active)
 
+        # If a user closed their Rift, surface a persistent alert with a download-zip option
+        for s in new_sessions:
+            if s.status in ("user-closed", "closed") and not s._close_alert_added:
+                s._close_alert_added = True
+                self._add_session_close_alert(s)
+
         # When dormant, occasionally play an ambient rift opening/closing animation.
         if not has_active and not self._ambient_timer.isActive() and not self._ambient_opening:
             self._schedule_ambient_rift()
@@ -4761,6 +4945,15 @@ class RiftAdminConsole(QWidget):
                     elif s.portal_connected != self._current_session.portal_connected:
                         self._current_session.portal_connected = s.portal_connected
                     break
+
+    def _add_session_close_alert(self, session):
+        """Persist an alert when the user closes their Rift, with a download-zip option."""
+        alert_text = "User closed this Rift. Save any important documents before closing this session or exiting."
+        session.chat.append(("system", alert_text, datetime.now()))
+        session.results.append({"type": "close_alert", "title": "Rift Closed", "content": session})
+        if self._current_session and self._current_session.id == session.id:
+            self._session_detail._refresh_chat()
+            self._session_detail.add_close_alert(session)
 
     def _on_result_received(self, session_id, result):
         """Called when a command result comes back from a portal client."""
@@ -4833,6 +5026,11 @@ class RiftAdminConsole(QWidget):
                     "⚠ Message failed to send (Firebase unreachable)", is_admin=False)
 
     def _switch_view(self, index):
+        current = self._stack.currentIndex()
+        # If we're leaving the session detail view, ask the admin to confirm first.
+        if current == 4 and index != 4 and self._current_session is not None:
+            if not self._confirm_leave_session():
+                return
         self._stack.setCurrentIndex(index)
         # Only highlight nav buttons for nav views (0, 1, 2, 3)
         for i, btn in enumerate(self._nav_buttons):
@@ -4871,7 +5069,21 @@ class RiftAdminConsole(QWidget):
                     self._firebase_worker.watch_chat(session_id)
                 return
 
+    def _confirm_leave_session(self):
+        """Ask the admin if they're sure they want to leave the current session."""
+        dialog = RiftConfirmDialog(
+            "Leave Session?",
+            "This session may contain unsaved files or screenshots. Leave without downloading?",
+            confirm_text="Leave",
+            cancel_text="Stay",
+            parent=self
+        )
+        dialog.move(self.mapToGlobal(self.rect().center() - dialog.rect().center()))
+        return dialog.exec() == QDialog.DialogCode.Accepted
+
     def _back_to_list(self):
+        if self._current_session and not self._confirm_leave_session():
+            return
         if self._current_session:
             self._firebase_worker.unwatch_results(self._current_session.id)
             self._firebase_worker.unwatch_chat(self._current_session.id)
@@ -4881,6 +5093,8 @@ class RiftAdminConsole(QWidget):
 
     def _close_session(self, session_id):
         """Close/end a session — sends force_close and returns to list."""
+        if self._current_session and not self._confirm_leave_session():
+            return
         # Send force_close command to the portal
         send_command_to_session(session_id, "force_close")
         # Stop watching results

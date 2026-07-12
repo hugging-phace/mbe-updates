@@ -513,6 +513,26 @@ def _speak_text(text):
         pass
 
 
+def _play_message_sound():
+    """Play the native system alert sound for incoming chat messages."""
+    try:
+        if platform.system() == "Windows":
+            try:
+                import winsound
+                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+                return
+            except Exception:
+                pass
+        elif platform.system() == "Darwin":
+            subprocess.run(["afplay", "/System/Library/Sounds/Glass.aiff"], check=False, timeout=5)
+            return
+        # Fallback to Qt's built-in beep
+        from PySide6.QtWidgets import QApplication
+        QApplication.beep()
+    except Exception:
+        pass
+
+
 # ------------------------------------------------------------------
 # UI: frosted glass container
 # ------------------------------------------------------------------
@@ -1943,6 +1963,101 @@ class ChatWorker(QObject):
 # ------------------------------------------------------------------
 # UI: main window
 # ------------------------------------------------------------------
+class RiftCloseConfirmDialog(QDialog):
+    """On-theme confirmation shown before the user closes their Rift."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedSize(420, 220)
+
+        container = QFrame(self)
+        container.setGeometry(0, 0, 420, 220)
+        container.setStyleSheet(f"""
+            QFrame {{
+                background-color: rgba(18, 17, 30, 245);
+                border: 1px solid rgba(154, 89, 182, 50);
+                border-radius: 16px;
+            }}
+        """)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(14)
+
+        title = QLabel("Close this Rift?")
+        title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {PALETTE['text']}; background: transparent; border: none;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        msg = QLabel("Closing this Rift will break the connection for the current session. Are you sure?")
+        msg.setFont(QFont("Segoe UI", 10))
+        msg.setStyleSheet(f"color: {PALETTE['muted']}; background: transparent; border: none;")
+        msg.setWordWrap(True)
+        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(msg, 1)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(12)
+
+        ask_btn = QPushButton("Ask IT Support")
+        ask_btn.setFixedHeight(32)
+        ask_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        ask_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        ask_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 255, 255, 12);
+                color: {PALETTE['muted']};
+                border: 1px solid rgba(255, 255, 255, 25);
+                border-radius: 6px;
+            }}
+            QPushButton:hover {{ background: rgba(255, 255, 255, 22); color: {PALETTE['text']}; }}
+        """)
+        ask_btn.clicked.connect(self._ask_it_support)
+
+        close_btn = QPushButton("Yes - close it")
+        close_btn.setFixedHeight(32)
+        close_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        close_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(220, 60, 60, 35);
+                color: #ff8a8a;
+                border: 1px solid rgba(220, 60, 60, 60);
+                border-radius: 6px;
+            }}
+            QPushButton:hover {{ background: rgba(220, 60, 60, 55); }}
+        """)
+        close_btn.clicked.connect(self.accept)
+
+        btn_layout.addWidget(ask_btn)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+        self._parent_window = parent
+        self._drag_pos = None
+
+    def _ask_it_support(self):
+        if self._parent_window:
+            self._parent_window._send_user_message("I'm not sure if I should close this Rift yet. Can you confirm?")
+        self.reject()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        event.accept()
+
+
 class ModernPortalWindow(QWidget):
     def __init__(self, portal_folder, color_override=None):
         super().__init__()
@@ -2415,8 +2530,10 @@ class ModernPortalWindow(QWidget):
     def _receive_atlas_message(self, text, speak=False):
         if not self.paused:
             self._set_status("Message from Atlas...", self._active_color)
-        # Fast pink flash on every message received
+        # Fast pink flash and sound on every message received
         self.orb.flash_alert()
+        if not self.muted:
+            threading.Thread(target=_play_message_sound, daemon=True).start()
         self.chat.add_message("Atlas", text, is_atlas=True)
         if not self.chat_visible:
             self._show_chat()
@@ -2748,7 +2865,10 @@ class ModernPortalWindow(QWidget):
 
     def _on_close_clicked(self):
         if not self.user_closed_once:
-            self._user_close()
+            dialog = RiftCloseConfirmDialog(self)
+            dialog.move(self.mapToGlobal(self.rect().center() - dialog.rect().center()))
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self._user_close()
         else:
             self._final_user_close()
 
