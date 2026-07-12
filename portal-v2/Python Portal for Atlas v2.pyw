@@ -1954,7 +1954,7 @@ class ModernPortalWindow(QWidget):
         title_layout.setContentsMargins(0, 0, 0, 0)
         title_layout.setSpacing(8)
 
-        title = QLabel("Python Portal")
+        title = QLabel("Rift")
         title.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {PALETTE['muted']}; background: transparent; border: none;")
 
@@ -1999,7 +1999,7 @@ class ModernPortalWindow(QWidget):
         layout.addSpacing(6)
         layout.addWidget(orb_area, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        self.status_label = QLabel("Awaiting portal connection")
+        self.status_label = QLabel("Awaiting Rift connection")
         self.status_label.setFont(QFont("Segoe UI", 9))
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setStyleSheet(f"color: {PALETTE['muted']}; background: transparent; border: none;")
@@ -2076,7 +2076,7 @@ class ModernPortalWindow(QWidget):
 
         self._center()
         self.show()
-        self._set_status("Awaiting portal connection", PALETTE["muted"])
+        self._set_status("Awaiting Rift connection", PALETTE["muted"])
         self._position_chat()
 
     def _on_new_command(self, cmd):
@@ -2104,7 +2104,7 @@ class ModernPortalWindow(QWidget):
             self.orb.set_state("idle")
         elif cmd_type == "portal_open":
             self.orb.start_portal_opening()
-            self._set_status("Portal opening...", PALETTE["active"])
+            self._set_status("Rift opening...", PALETTE["active"])
         elif cmd_type == "rift_command":
             self.orb.flash_command()
         else:
@@ -2116,7 +2116,7 @@ class ModernPortalWindow(QWidget):
         color = PALETTE["success"] if ok else PALETTE["error"]
         self._set_status(result[:60], color)
         if not self.paused:
-            QTimer.singleShot(2500, lambda: self._set_status("Portal idle", self._idle_color))
+            QTimer.singleShot(2500, lambda: self._set_status("Rift idle", self._idle_color))
 
     def closeEvent(self, event):
         try:
@@ -2159,11 +2159,11 @@ class ModernPortalWindow(QWidget):
             if self.paused:
                 self.paused = False
                 self.orb.set_paused(False)
-                self._set_status("Portal resumed", PALETTE["success"])
+                self._set_status("Rift resumed", PALETTE["success"])
             else:
                 self.paused = True
                 self.orb.set_paused(True)
-                self._set_status("Portal paused", PALETTE["warning"])
+                self._set_status("Rift paused", PALETTE["warning"])
             self._poll_worker.set_paused(self.paused)
         elif key == Qt.Key.Key_F:
             if self.orb._state == "feedme":
@@ -2183,16 +2183,16 @@ class ModernPortalWindow(QWidget):
             self._set_status("Alert flash", PALETTE["active"])
         elif key == Qt.Key.Key_O:
             self.orb.start_portal_opening()
-            self._set_status("Portal opening", PALETTE["active"])
+            self._set_status("Rift opening", PALETTE["active"])
         elif key == Qt.Key.Key_S:
             self.orb.start_screenshot()
             self._set_status("Screenshot in progress", PALETTE["warning"])
             QTimer.singleShot(3000, lambda: (self.orb.end_screenshot(),
-                                             self._set_status("Portal idle", self._idle_color)))
+                                             self._set_status("Rift idle", self._idle_color)))
         elif key == Qt.Key.Key_Escape:
             self.paused = False
             self.orb.set_state("idle")
-            self._set_status("Portal idle", self._idle_color)
+            self._set_status("Rift idle", self._idle_color)
             self._poll_worker.set_paused(False)
         elif key == Qt.Key.Key_K:
             # Inject a test command into Firebase to verify the portal can receive commands.
@@ -2360,7 +2360,7 @@ class ModernPortalWindow(QWidget):
         if self.paused or self.user_closed_once:
             return
         _post_to_discord(
-            f"**Reminder**\nPortal `{SESSION_ID}` is still open and listening.\n"
+            f"**Reminder**\nRift `{SESSION_ID}` is still open and listening.\n"
             f"Folder: `{self.portal_folder}`")
 
     def _receive_atlas_message(self, text, speak=False):
@@ -2374,7 +2374,7 @@ class ModernPortalWindow(QWidget):
         if speak and not self.muted:
             threading.Thread(target=_speak_text, args=(text,), daemon=True).start()
         if not self.paused:
-            QTimer.singleShot(2000, lambda: self._set_status("Portal idle", self._idle_color))
+            QTimer.singleShot(2000, lambda: self._set_status("Rift idle", self._idle_color))
 
     def _execute_command(self, cmd):
         cmd_type = cmd.get("type", "")
@@ -2385,38 +2385,38 @@ class ModernPortalWindow(QWidget):
             self.paused = True
             self.orb.set_paused(True)
             self._poll_worker.set_paused(True)
-            self._set_status("Portal paused", PALETTE["warning"])
-            return True, "Portal paused"
+            self._set_status("Rift paused", PALETTE["warning"])
+            return True, "Rift paused"
 
         if cmd_type == "resume_portal":
             self.paused = False
             self.orb.set_paused(False)
             self._poll_worker.set_paused(False)
-            self._set_status("Portal resumed", PALETTE["success"])
-            return True, "Portal resumed"
+            self._set_status("Rift resumed", PALETTE["success"])
+            return True, "Rift resumed"
 
         if cmd_type == "test_pulse":
             self.orb.set_state("test_pulse")
             self._set_status("Responsiveness test running", PALETTE["error"])
-            _post_to_discord(f"[Portal @ {user}@{host}] Test pulse started.")
+            _post_to_discord(f"[Rift @ {user}@{host}] Test pulse started.")
             return True, "Test pulse started"
 
         if cmd_type == "stop_test_pulse":
             self.orb.set_state("idle" if not self.paused else "paused")
             self._set_status("Test pulse stopped", PALETTE["success"])
-            _post_to_discord(f"[Portal @ {user}@{host}] Test pulse stopped.")
+            _post_to_discord(f"[Rift @ {user}@{host}] Test pulse stopped.")
             return True, "Test pulse stopped"
 
         if cmd_type == "feedme":
             self.orb.set_state("feedme")
             self._set_status("Drop files here", PALETTE["success"])
-            _post_to_discord(f"[Portal @ {user}@{host}] Feed-me mode active.")
+            _post_to_discord(f"[Rift @ {user}@{host}] Feed-me mode active.")
             return True, "Feed-me mode active"
 
         if cmd_type == "stop_feedme":
             self.orb.set_state("idle" if not self.paused else "paused")
             self._set_status("Drop mode ended", PALETTE["success"])
-            _post_to_discord(f"[Portal @ {user}@{host}] Feed-me mode ended.")
+            _post_to_discord(f"[Rift @ {user}@{host}] Feed-me mode ended.")
             return True, "Feed-me mode ended"
 
         if cmd_type in ("message", "speak"):
@@ -2520,7 +2520,7 @@ class ModernPortalWindow(QWidget):
         if cmd_type == "portal_open":
             # Don't override the portal opening animation — let it play
             _mark_portal_opened()
-            return True, "Portal opened"
+            return True, "Rift opened"
 
         if cmd_type == "screenshot":
             was_visible = self.isVisible()
@@ -2567,7 +2567,7 @@ class ModernPortalWindow(QWidget):
 
         if cmd_type == "force_close":
             self._force_close()
-            return True, "Closing portal"
+            return True, "Closing Rift"
 
         # ---- .rift commands — interpreted directly by the portal ----
         if cmd_type == "rift_command":
@@ -2713,11 +2713,11 @@ class ModernPortalWindow(QWidget):
         user = _get_user()
         host = platform.node() or "unknown"
         _post_to_discord(
-            f"**User closed the portal (background mode)**\n"
-            f"[Portal @ {user}@{host}]\n"
+            f"**User closed the Rift (background mode)**\n"
+            f"[Rift @ {user}@{host}]\n"
             f"Session: `{SESSION_ID}`\n"
             f"Atlas can use `/resurrect` to reopen it or `/close` to end the session.\n"
-            f"Closing again will permanently delete the portal.")
+            f"Closing again will permanently delete the Rift.")
         self.hide()
 
     def _final_user_close(self):
@@ -2728,8 +2728,8 @@ class ModernPortalWindow(QWidget):
         user = _get_user()
         host = platform.node() or "unknown"
         _post_to_discord(
-            f"**User permanently closed the portal**\n"
-            f"[Portal @ {user}@{host}]\n"
+            f"**User permanently closed the Rift**\n"
+            f"[Rift @ {user}@{host}]\n"
             f"Session: `{SESSION_ID}`")
         self.destroy()
         try:
@@ -2805,7 +2805,7 @@ def main():
             # Post the opening message to the default webhook first so the bot sees it,
             # then wait for a session-specific webhook assignment.
             _post_to_discord(
-                f"**Portal Opened**\n"
+                f"**Rift Opened**\n"
                 f"Session: `{SESSION_ID}`\n"
                 f"User: {user}@{host}\n"
                 f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
