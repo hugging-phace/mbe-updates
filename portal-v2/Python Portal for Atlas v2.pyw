@@ -541,16 +541,21 @@ class FrostedContainer(QFrame):
 
         # Soft top highlight (glass sheen)
         sheen_grad = QLinearGradient(rect.left(), rect.top(), rect.left(), rect.top() + rect.height() * 0.35)
-        sheen_grad.setColorAt(0, QColor(255, 255, 255, 20))
+        sheen_grad.setColorAt(0, QColor(255, 255, 255, 40))
+        sheen_grad.setColorAt(0.6, QColor(255, 255, 255, 10))
         sheen_grad.setColorAt(1, QColor(255, 255, 255, 0))
         sheen_rect = rect.adjusted(2, 2, -2, 0)
         sheen_rect.setHeight(int(rect.height() * 0.35))
         painter.setBrush(QBrush(sheen_grad))
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(sheen_rect, radius, radius)
 
-        # Thin purple border
-        pen = QPen(QColor(154, 89, 182, 45))
-        pen.setWidthF(1.5)
+        # Glass-like gradient border: brighter at the top, moodier at the bottom
+        border_grad = QLinearGradient(rect.left(), rect.top(), rect.left(), rect.bottom())
+        border_grad.setColorAt(0, QColor(200, 160, 240, 100))
+        border_grad.setColorAt(0.5, QColor(154, 89, 182, 60))
+        border_grad.setColorAt(1, QColor(110, 60, 170, 45))
+        pen = QPen(QBrush(border_grad), 1.5)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), radius, radius)
@@ -2325,9 +2330,14 @@ class ModernPortalWindow(QWidget):
         flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window
         if always_on_top:
             flags |= Qt.WindowType.WindowStaysOnTopHint
+        # Hide, reconfigure, then re-show to avoid crashes on translucent frameless windows.
+        was_visible = self.isVisible()
+        pos = self.pos()
+        self.hide()
         self.setWindowFlags(flags)
-        if self.isVisible():
+        if was_visible:
             self.show()
+            self.move(pos)
 
     def _on_orb_state_changed(self, state):
         """Keep the window always-on-top only while in feedme mode."""
