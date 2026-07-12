@@ -571,15 +571,16 @@ _DM_COLORS = [
 ]
 # State color overrides (r, g, b) — particles tint toward these
 _STATE_COLORS = {
-    "awaiting":       None,              # pure black — no connection yet
-    "portal_opening": None,              # pink+blue needle growing to idle
-    "idle":           None,              # violet palette
-    "command":        (40, 120, 220),    # blend of blues — deep sea blue
-    "terminal":       (140, 60, 220),    # purple — terminal command
-    "screenshot":     (220, 200, 40),    # yellow — screenshot in progress
-    "test_pulse":     (220, 30, 40),     # intense red
-    "paused":         (255, 180, 50),    # amber/yellow light
-    "feedme":         (40, 220, 100),    # green
+    "awaiting":        None,              # pure black — no connection yet
+    "portal_opening":  None,              # pink+blue needle growing to idle
+    "portal_closing":  None,              # violet shrinking back to dormant needle
+    "idle":            None,              # violet palette
+    "command":         (40, 120, 220),    # blend of blues — deep sea blue
+    "terminal":        (140, 60, 220),    # purple — terminal command
+    "screenshot":      (220, 200, 40),    # yellow — screenshot in progress
+    "test_pulse":      (220, 30, 40),     # intense red
+    "paused":          (255, 180, 50),    # amber/yellow light
+    "feedme":          (40, 220, 100),    # green
 }
 
 
@@ -977,15 +978,21 @@ class OrbWidget(QWidget):
         if self._alert_flash > 0:
             self._alert_flash = max(0, self._alert_flash - dt * 8.0)
 
-        # Portal opening: progress grows from 0 to 1, then transitions to idle
+        # Portal opening/closing: progress grows/shrinks, then transitions
         if self._state == "portal_opening":
             self._portal_opening_progress = min(1.0, self._portal_opening_progress + dt * 0.4)
             if self._portal_opening_progress >= 1.0:
                 self.set_state("idle")
+        elif self._state == "portal_closing":
+            self._portal_opening_progress = max(0.0, self._portal_opening_progress - dt * 0.4)
+            if self._portal_opening_progress <= 0.0:
+                self.set_state("awaiting")
         else:
-            # Reset progress when not in portal_opening (so it can replay)
+            # Reset progress when not in portal_opening/closing (so it can replay)
             if self._state != "awaiting" and self._portal_opening_progress > 0:
                 self._portal_opening_progress = max(0, self._portal_opening_progress - dt * 2.0)
+            elif self._state == "awaiting":
+                self._portal_opening_progress = 0.0
 
         self._scale = self._lerp(self._scale, self._target_scale, ease)
         self._speed_mul = self._lerp(self._speed_mul, self._target_speed_mul, ease)
@@ -1059,6 +1066,16 @@ class OrbWidget(QWidget):
             self._target_tint = None
             self._target_tint_blend = 0.0
             # Don't reset progress here — it grows in _tick
+        elif state == "portal_closing":
+            # Needle point that shrinks — violet fading back to pink+blue, then gone
+            self._target_scale = 1.0
+            self._target_speed_mul = 0.8
+            self._target_glow = 0.0
+            self._target_edge_layers = 3
+            self._target_edge_intensity = 0.08
+            self._target_tint = None
+            self._target_tint_blend = 0.0
+            # Don't reset progress here — it shrinks in _tick
         elif state == "idle":
             self._target_scale = 1.0
             self._target_speed_mul = 1.0
@@ -1146,6 +1163,11 @@ class OrbWidget(QWidget):
         self._portal_opening_progress = 0.0
         self.set_state("portal_opening")
 
+    def start_portal_closing(self):
+        """Begin the portal closing animation — active portal shrinks back to dormant."""
+        self._portal_opening_progress = 1.0
+        self.set_state("portal_closing")
+
     def set_paused(self, paused):
         if paused:
             self.set_state("paused")
@@ -1221,13 +1243,13 @@ class OrbWidget(QWidget):
         # Awaiting: orb shrinks to near nothing — empty space
         if self._state == "awaiting":
             base_r *= 0.02
-        # Portal opening: needle point grows from 0.02 to 1.0
-        if self._state == "portal_opening":
+        # Portal opening/closing: needle point grows/shrinks between 0.02 and 1.0
+        if self._state in ("portal_opening", "portal_closing"):
             prog = self._portal_opening_progress
             base_r *= 0.02 + 0.98 * prog
         # Gentle whole-portal breathing — very subtle, makes it feel alive
         # Only in idle and colored states (not paused/pulse which have their own size behavior)
-        if self._state not in ("paused", "test_pulse", "awaiting", "portal_opening"):
+        if self._state not in ("paused", "test_pulse", "awaiting", "portal_opening", "portal_closing"):
             breath_scale = 1.0 + 0.03 * math.sin(self._breath_phase * 0.6)
             base_r *= breath_scale
 
@@ -1397,8 +1419,8 @@ class OrbWidget(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(blob)
 
-        # ---- 5. Portal opening: needle point grows, pink+blue fading to violet ----
-        if self._state == "portal_opening":
+        # ---- 5. Portal opening/closing: needle point grows/shrinks, pink+blue fading to violet ----
+        if self._state in ("portal_opening", "portal_closing"):
             prog = self._portal_opening_progress  # 0..1
             # Color shifts from pink+blue to violet as it grows
             # Pink (255, 80, 200) + Blue (40, 120, 220) → Violet (90, 45, 110)
