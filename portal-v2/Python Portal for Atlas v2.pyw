@@ -2058,6 +2058,95 @@ class RiftCloseConfirmDialog(QDialog):
         event.accept()
 
 
+class RiftAgentClosedDialog(QDialog):
+    """Shown when the admin (Rift Agent) closes the session from the console."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedSize(440, 220)
+
+        container = QFrame(self)
+        container.setGeometry(0, 0, 440, 220)
+        container.setStyleSheet(f"""
+            QFrame {{
+                background-color: rgba(18, 17, 30, 245);
+                border: 1px solid rgba(154, 89, 182, 50);
+                border-radius: 16px;
+            }}
+        """)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(14)
+
+        title = QLabel("Session Closed")
+        title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {PALETTE['text']}; background: transparent; border: none;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        msg = QLabel("Rift Agent just closed this session. You can close your Rift now, or leave it open if you believe they might need to reconnect later.")
+        msg.setFont(QFont("Segoe UI", 10))
+        msg.setStyleSheet(f"color: {PALETTE['muted']}; background: transparent; border: none;")
+        msg.setWordWrap(True)
+        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(msg, 1)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(12)
+
+        keep_btn = QPushButton("Keep Open")
+        keep_btn.setFixedHeight(32)
+        keep_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        keep_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        keep_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 255, 255, 12);
+                color: {PALETTE['muted']};
+                border: 1px solid rgba(255, 255, 255, 25);
+                border-radius: 6px;
+            }}
+            QPushButton:hover {{ background: rgba(255, 255, 255, 22); color: {PALETTE['text']}; }}
+        """)
+        keep_btn.clicked.connect(self.reject)
+
+        close_btn = QPushButton("Close Rift")
+        close_btn.setFixedHeight(32)
+        close_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        close_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(220, 60, 60, 35);
+                color: #ff8a8a;
+                border: 1px solid rgba(220, 60, 60, 60);
+                border-radius: 6px;
+            }}
+            QPushButton:hover {{ background: rgba(220, 60, 60, 55); }}
+        """)
+        close_btn.clicked.connect(self.accept)
+
+        btn_layout.addWidget(keep_btn)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+        self._drag_pos = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        event.accept()
+
+
 class ModernPortalWindow(QWidget):
     def __init__(self, portal_folder, color_override=None):
         super().__init__()
@@ -2926,8 +3015,21 @@ class ModernPortalWindow(QWidget):
             _mark_session_closed()
         except Exception:
             pass
-        self._running = False
-        self.close()
+        dialog = RiftAgentClosedDialog(self)
+        dialog.move(self.mapToGlobal(self.rect().center() - dialog.rect().center()))
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._acknowledge_agent_close()
+
+    def _acknowledge_agent_close(self):
+        """User chose to close their Rift after the agent ended the session."""
+        self.user_closed_once = True
+        try:
+            _firebase_put(f"sessions/{SESSION_ID}/status", "user-closed")
+        except Exception:
+            pass
+        self.chat.hide()
+        self._set_always_on_top(False)
+        self.hide()
 
 
 # ------------------------------------------------------------------
