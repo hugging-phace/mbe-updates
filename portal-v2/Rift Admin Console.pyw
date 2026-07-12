@@ -1877,8 +1877,10 @@ class Session:
         self.created = datetime.now()
         self.last_active = datetime.now()
         self.orb_state = "idle"
-        self.chat = []       # list of (sender, text, timestamp)
-        self.results = []    # list of dicts: {type, title, content, timestamp, collapsed}
+        self.chat = []              # list of (sender, text, timestamp)
+        self.results = []           # list of dicts: {type, title, content, timestamp, collapsed}
+        self._seen_chat_ids = set()
+        self._seen_result_ids = set()
         self.opened_at = ""
         self.last_seen = ""
         self.card_state = "inactive"
@@ -4765,6 +4767,12 @@ class RiftAdminConsole(QWidget):
         # Find the session
         for s in self._sessions:
             if s.id == session_id:
+                cmd_id = result.get("id", "")
+                # Deduplicate results when a session is rewatched
+                if cmd_id and cmd_id in s._seen_result_ids:
+                    break
+                if cmd_id:
+                    s._seen_result_ids.add(cmd_id)
                 cmd_type = result.get("type", "output")
                 ok = result.get("ok", True)
                 result_payload = result.get("result", "")
@@ -5132,14 +5140,20 @@ class RiftAdminConsole(QWidget):
         text = msg.get("text", "")
         sender = msg.get("sender", "portal")
         msg_type = msg.get("type", "")
+        msg_id = msg.get("id", "")
         if not text:
             return
-        # Fast pink flash on every incoming message
-        self.orb.flash_alert()
         # Find the session and add the message
         for s in self._sessions:
             if s.id == session_id:
+                # Deduplicate messages when a session is rewatched
+                if msg_id and msg_id in s._seen_chat_ids:
+                    break
+                if msg_id:
+                    s._seen_chat_ids.add(msg_id)
                 s.chat.append((sender, text, datetime.now()))
+                # Fast pink flash on every incoming message
+                self.orb.flash_alert()
                 if self._current_session and self._current_session.id == session_id:
                     self._session_detail._add_chat_bubble(text, is_admin=False)
                 break

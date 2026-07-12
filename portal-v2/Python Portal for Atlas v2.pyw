@@ -1663,6 +1663,7 @@ class ChatBubble(QFrame):
 class ChatWindow(QWidget):
     message_sent = Signal(str)
     mute_toggled = Signal(bool)
+    close_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1717,9 +1718,19 @@ class ChatWindow(QWidget):
         """)
         self.mute_btn.toggled.connect(self._on_mute)
 
+        close_btn = QPushButton("x")
+        close_btn.setFixedSize(24, 24)
+        close_btn.setStyleSheet("""
+            QPushButton { background: transparent; color: #8b8b9a; border-radius: 12px; font-size: 12px; border: none; }
+            QPushButton:hover { background: #8b3a3a; color: #f0f0f5; }
+        """)
+        close_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        close_btn.clicked.connect(self._on_close)
+
         header_layout.addWidget(title)
         header_layout.addStretch()
         header_layout.addWidget(self.mute_btn)
+        header_layout.addWidget(close_btn)
         layout.addWidget(header)
 
         # Messages
@@ -1796,6 +1807,9 @@ class ChatWindow(QWidget):
         self.input.clear()
         self.add_message("You", text, is_atlas=False)
         self.message_sent.emit(text)
+
+    def _on_close(self):
+        self.close_requested.emit()
 
     def add_message(self, sender, text, is_atlas=True):
         stretch = self.messages_layout.takeAt(self.messages_layout.count() - 1)
@@ -2047,6 +2061,7 @@ class ModernPortalWindow(QWidget):
         self.chat = ChatWindow(self)
         self.chat.message_sent.connect(self._send_user_message)
         self.chat.mute_toggled.connect(self._on_mute_toggled)
+        self.chat.close_requested.connect(self._hide_chat)
         self.chat_visible = False
 
         # Window drag
@@ -2338,6 +2353,9 @@ class ModernPortalWindow(QWidget):
         if was_visible:
             self.show()
             self.move(pos)
+            if always_on_top:
+                self.raise_()
+                self.activateWindow()
 
     def _on_orb_state_changed(self, state):
         """Keep the window always-on-top only while in feedme mode."""
