@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import (
-    Qt, QTimer, QPoint, QPointF, QSize, Signal, QElapsedTimer, QEvent
+    Qt, QTimer, QPoint, QPointF, QSize, QRectF, Signal, QElapsedTimer, QEvent
 )
 from PySide6.QtGui import (
     QPainter, QColor, QRadialGradient, QLinearGradient, QFont,
@@ -2022,26 +2022,27 @@ class ResultPopoutDialog(QDialog):
 
 
 class ZoomImageViewer(QWidget):
-    """Image viewer that starts fit-to-window, click toggles zoom, click-and-drag pans."""
+    """Image viewer: fit-to-window, click toggles zoom, click-and-drag pans."""
 
     def __init__(self, pixmap, parent=None):
         super().__init__(parent)
         self._pixmap = pixmap
         self._scale = 1.0
-        self._offset = QPoint(0, 0)
+        self._offset = QPointF(0, 0)
         self._zoomed = False
         self._dragging = False
         self._may_be_click = False
-        self._drag_start = QPoint()
-        self._offset_at_drag_start = QPoint()
-        self.setMinimumSize(400, 300)
+        self._drag_start = QPointF()
+        self._offset_at_drag_start = QPointF()
+        self.setMinimumSize(300, 200)
         self.setMouseTracking(True)
         self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
         self.setStyleSheet("background: #0b0b14;")
 
     def showEvent(self, event):
         super().showEvent(event)
-        self._fit_to_window()
+        # Defer fitting until the widget has its final geometry.
+        QTimer.singleShot(0, self._fit_to_window)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -2050,11 +2051,19 @@ class ZoomImageViewer(QWidget):
 
     def _fit_to_window(self):
         if self._pixmap.isNull() or self._pixmap.width() == 0 or self._pixmap.height() == 0:
+            self._scale = 1.0
+            self._offset = QPointF(0, 0)
+            self._zoomed = False
+            self.update()
             return
-        sw = self.width() / self._pixmap.width()
-        sh = self.height() / self._pixmap.height()
+        w = self.width()
+        h = self.height()
+        if w <= 0 or h <= 0:
+            return
+        sw = w / self._pixmap.width()
+        sh = h / self._pixmap.height()
         self._scale = min(sw, sh, 1.0)
-        self._offset = QPoint(0, 0)
+        self._offset = QPointF(0, 0)
         self._zoomed = False
         self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
         self.update()
@@ -2063,10 +2072,9 @@ class ZoomImageViewer(QWidget):
         if self._zoomed:
             self._fit_to_window()
         else:
-            # Zoom in: show actual pixels or 2.5x, whichever is larger
             fit_scale = min(self.width() / self._pixmap.width(), self.height() / self._pixmap.height())
             self._scale = max(2.5, fit_scale)
-            self._offset = QPoint(0, 0)
+            self._offset = QPointF(0, 0)
             self._zoomed = True
             self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
             self.update()
@@ -2084,21 +2092,19 @@ class ZoomImageViewer(QWidget):
         y = (self.height() - h) / 2 + self._offset.y()
         painter.drawPixmap(QRectF(x, y, w, h), self._pixmap,
                            QRectF(0, 0, self._pixmap.width(), self._pixmap.height()))
-        painter.end()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_start = event.position().toPoint()
-            self._offset_at_drag_start = QPoint(self._offset)
+            self._drag_start = event.position()
+            self._offset_at_drag_start = QPointF(self._offset)
             self._may_be_click = True
             self._dragging = False
             event.accept()
 
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.MouseButton.LeftButton:
-            pos = event.position().toPoint()
+            pos = event.position()
             if self._may_be_click and (pos - self._drag_start).manhattanLength() > 4:
-                # This is a drag, not a click
                 self._may_be_click = False
                 self._dragging = True
                 self.setCursor(QCursor(Qt.CursorShape.ClosedHandCursor))
@@ -2124,14 +2130,31 @@ class ZoomImageViewer(QWidget):
 class ImagePopoutDialog(QDialog):
     """Enlarged popout window for screenshots with zoom/pan support."""
 
+    MAX_W = 1000
+    MAX_H = 700
+    MIN_W = 500
+    MIN_H = 350
+    PAD = 40
+
     def __init__(self, pixmap, title, parent=None):
         super().__init__(parent, Qt.WindowType.WindowCloseButtonHint)
         self.setWindowTitle(title)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(4, 4, 4, 4)
         viewer = ZoomImageViewer(pixmap)
         layout.addWidget(viewer)
-        self.resize(min(1200, max(600, pixmap.width() + 40)), min(900, max(450, pixmap.height() + 40)))
+        self._size_to_image(pixmap)
+
+    def _size_to_image(self, pixmap):
+        if pixmap.isNull() or pixmap.width() == 0 or pixmap.height() == 0:
+            self.resize(self.MIN_W, self.MIN_H)
+            return
+        img_w = pixmap.width()
+        img_h = pixmap.height()
+        scale = min(1.0, (self.MAX_W - self.PAD) / img_w, (self.MAX_H - self.PAD) / img_h)
+        w = max(self.MIN_W, int(img_w * scale) + self.PAD)
+        h = max(self.MIN_H, int(img_h * scale) + self.PAD)
+        self.resize(w, h)
 
 
 class FileResultBox(BlackGlassPanel):
