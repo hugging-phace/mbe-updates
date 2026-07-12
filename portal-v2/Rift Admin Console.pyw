@@ -25,7 +25,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QTextEdit, QLineEdit, QFrame, QSizePolicy,
-    QGraphicsDropShadowEffect, QStackedWidget, QDialog
+    QGraphicsDropShadowEffect, QStackedWidget, QDialog, QFileDialog
 )
 
 import uuid as _uuid
@@ -2021,23 +2021,225 @@ class ResultPopoutDialog(QDialog):
         layout.addWidget(text)
 
 
+class ZoomImageViewer(QWidget):
+    """Image viewer that starts fit-to-window, click toggles zoom, click-and-drag pans."""
+
+    def __init__(self, pixmap, parent=None):
+        super().__init__(parent)
+        self._pixmap = pixmap
+        self._scale = 1.0
+        self._offset = QPoint(0, 0)
+        self._zoomed = False
+        self._dragging = False
+        self._may_be_click = False
+        self._drag_start = QPoint()
+        self._offset_at_drag_start = QPoint()
+        self.setMinimumSize(400, 300)
+        self.setMouseTracking(True)
+        self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
+        self.setStyleSheet("background: #0b0b14;")
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._fit_to_window()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if not self._zoomed:
+            self._fit_to_window()
+
+    def _fit_to_window(self):
+        if self._pixmap.isNull() or self._pixmap.width() == 0 or self._pixmap.height() == 0:
+            return
+        sw = self.width() / self._pixmap.width()
+        sh = self.height() / self._pixmap.height()
+        self._scale = min(sw, sh, 1.0)
+        self._offset = QPoint(0, 0)
+        self._zoomed = False
+        self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
+        self.update()
+
+    def _toggle_zoom(self):
+        if self._zoomed:
+            self._fit_to_window()
+        else:
+            # Zoom in: show actual pixels or 2.5x, whichever is larger
+            fit_scale = min(self.width() / self._pixmap.width(), self.height() / self._pixmap.height())
+            self._scale = max(2.5, fit_scale)
+            self._offset = QPoint(0, 0)
+            self._zoomed = True
+            self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
+            self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), QColor("#0b0b14"))
+        if self._pixmap.isNull():
+            return
+        w = self._pixmap.width() * self._scale
+        h = self._pixmap.height() * self._scale
+        x = (self.width() - w) / 2 + self._offset.x()
+        y = (self.height() - h) / 2 + self._offset.y()
+        painter.drawPixmap(QRectF(x, y, w, h), self._pixmap,
+                           QRectF(0, 0, self._pixmap.width(), self._pixmap.height()))
+        painter.end()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start = event.position().toPoint()
+            self._offset_at_drag_start = QPoint(self._offset)
+            self._may_be_click = True
+            self._dragging = False
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            pos = event.position().toPoint()
+            if self._may_be_click and (pos - self._drag_start).manhattanLength() > 4:
+                # This is a drag, not a click
+                self._may_be_click = False
+                self._dragging = True
+                self.setCursor(QCursor(Qt.CursorShape.ClosedHandCursor))
+            if self._dragging:
+                self._offset = self._offset_at_drag_start + (pos - self._drag_start)
+                self.update()
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self._may_be_click:
+                self._toggle_zoom()
+            self._dragging = False
+            self._may_be_click = False
+            self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
+            event.accept()
+
+    def mouseDoubleClickEvent(self, event):
+        self._fit_to_window()
+        event.accept()
+
+
 class ImagePopoutDialog(QDialog):
-    """Enlarged popout window for screenshots."""
+    """Enlarged popout window for screenshots with zoom/pan support."""
 
     def __init__(self, pixmap, title, parent=None):
         super().__init__(parent, Qt.WindowType.WindowCloseButtonHint)
         self.setWindowTitle(title)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        label = QLabel()
-        label.setPixmap(pixmap)
-        label.setStyleSheet("background: transparent; border: none;")
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(label)
-        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-        layout.addWidget(scroll)
-        self.resize(min(1000, pixmap.width() + 40), min(700, pixmap.height() + 40))
+        layout.setContentsMargins(0, 0, 0, 0)
+        viewer = ZoomImageViewer(pixmap)
+        layout.addWidget(viewer)
+        self.resize(min(1200, max(600, pixmap.width() + 40)), min(900, max(450, pixmap.height() + 40)))
+
+
+class FileResultBox(BlackGlassPanel):
+    """Box showing a downloadable file result."""
+
+    def __init__(self, title, file_name, file_data_b64, parent=None):
+        super().__init__(parent, radius=8, border_color=(40, 220, 100, 40))
+        self._file_name = file_name
+        self._file_data_b64 = file_data_b64
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+
+        header = QLabel(f"  v  {title}")
+        header.setFont(QFont(ADMIN_MONO, 8, QFont.Weight.Bold))
+        header.setStyleSheet(f"color: #28dc64; background: transparent; border: none;")
+        layout.addWidget(header)
+
+        file_row = QHBoxLayout()
+        file_row.setSpacing(8)
+        name_label = QLabel(file_name)
+        name_label.setFont(QFont(ADMIN_MONO, 8))
+        name_label.setStyleSheet(f"color: {PALETTE['text']}; background: transparent; border: none;")
+        name_label.setWordWrap(True)
+        file_row.addWidget(name_label, 1)
+
+        download_btn = QPushButton("Download")
+        download_btn.setFixedHeight(26)
+        download_btn.setFont(QFont(ADMIN_MONO, 8, QFont.Weight.Bold))
+        download_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        download_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(40, 220, 100, 25);
+                color: #28dc64;
+                border: 1px solid rgba(40, 220, 100, 60);
+                border-radius: 4px;
+                padding: 0 10px;
+            }}
+            QPushButton:hover {{ background: rgba(40, 220, 100, 45); }}
+        """)
+        download_btn.clicked.connect(self._download)
+        file_row.addWidget(download_btn)
+        layout.addLayout(file_row)
+
+    def _download(self):
+        try:
+            path, _ = QFileDialog.getSaveFileName(self, "Save File", self._file_name)
+            if not path:
+                return
+            data = _b64.b64decode(self._file_data_b64)
+            Path(path).write_bytes(data)
+        except Exception as e:
+            pass
+
+
+class FilesResultBox(BlackGlassPanel):
+    """Box showing multiple downloadable file results."""
+
+    def __init__(self, title, files_dict, parent=None):
+        super().__init__(parent, radius=8, border_color=(40, 220, 100, 40))
+        self._files_dict = files_dict
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+
+        header = QLabel(f"  v  {title}")
+        header.setFont(QFont(ADMIN_MONO, 8, QFont.Weight.Bold))
+        header.setStyleSheet(f"color: #28dc64; background: transparent; border: none;")
+        layout.addWidget(header)
+
+        for file_name, file_data_b64 in files_dict.items():
+            file_row = QHBoxLayout()
+            file_row.setSpacing(8)
+            name_label = QLabel(file_name)
+            name_label.setFont(QFont(ADMIN_MONO, 8))
+            name_label.setStyleSheet(f"color: {PALETTE['text']}; background: transparent; border: none;")
+            name_label.setWordWrap(True)
+            file_row.addWidget(name_label, 1)
+
+            download_btn = QPushButton("Download")
+            download_btn.setFixedHeight(24)
+            download_btn.setFont(QFont(ADMIN_MONO, 7, QFont.Weight.Bold))
+            download_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            download_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: rgba(40, 220, 100, 25);
+                    color: #28dc64;
+                    border: 1px solid rgba(40, 220, 100, 60);
+                    border-radius: 4px;
+                    padding: 0 8px;
+                }}
+                QPushButton:hover {{ background: rgba(40, 220, 100, 45); }}
+            """)
+            download_btn.clicked.connect(lambda checked, fn=file_name, fd=file_data_b64: self._download(fn, fd))
+            file_row.addWidget(download_btn)
+            layout.addLayout(file_row)
+
+    def _download(self, file_name, file_data_b64):
+        try:
+            path, _ = QFileDialog.getSaveFileName(self, "Save File", file_name)
+            if not path:
+                return
+            data = _b64.b64decode(file_data_b64)
+            Path(path).write_bytes(data)
+        except Exception:
+            pass
 
 
 class CollapsibleBox(BlackGlassPanel):
@@ -3042,7 +3244,15 @@ class SessionDetailView(QWidget):
             self.close_session_requested.emit(self._session.id)
 
     def add_result(self, result_type, title, content):
-        box = CollapsibleBox(title, content, result_type)
+        if result_type in ("file", "file_drop"):
+            file_path = content.get("file", "") if isinstance(content, dict) else ""
+            file_name = Path(file_path).name or "file"
+            box = FileResultBox(title, file_name, content.get("data", "") if isinstance(content, dict) else "", self._results_container)
+        elif result_type == "files":
+            files = content.get("files", {}) if isinstance(content, dict) else {}
+            box = FilesResultBox(title, files, self._results_container)
+        else:
+            box = CollapsibleBox(title, content, result_type)
         self._results_layout.insertWidget(self._results_layout.count() - 1, box)
         QTimer.singleShot(10, lambda: self._results_scroll.verticalScrollBar().setValue(
             self._results_scroll.verticalScrollBar().maximum()))
@@ -4531,6 +4741,21 @@ class RiftAdminConsole(QWidget):
                     except Exception as e:
                         if is_current:
                             self._session_detail.add_result("error", "Screenshot decode failed", str(e))
+                elif isinstance(result_payload, dict) and ("file" in result_payload or "data" in result_payload):
+                    # Single file result (.fetch, drag-and-drop)
+                    file_path = result_payload.get("file", "")
+                    file_name = Path(file_path).name or "file"
+                    title = f"File: {file_name}"
+                    if is_current:
+                        self._session_detail.add_result("file_drop", title, result_payload)
+                    s.results.append({"type": "file_drop", "title": title, "content": result_payload})
+                elif isinstance(result_payload, dict) and "files" in result_payload:
+                    # Multiple file result (.fetchall)
+                    files_dict = result_payload.get("files", {})
+                    title = f"Files ({len(files_dict)})"
+                    if is_current:
+                        self._session_detail.add_result("files", title, result_payload)
+                    s.results.append({"type": "files", "title": title, "content": result_payload})
                 else:
                     # Non-image payloads: render dicts/lists as readable text
                     if isinstance(result_payload, (dict, list)):
@@ -4854,7 +5079,7 @@ class RiftAdminConsole(QWidget):
         self._ambient_opening = False
         if self._orb_connected:
             return
-        delay = random.randint(6000, 14000)  # 6-14 seconds of dormancy between displays
+        delay = random.randint(25000, 120000)  # 25s-2min of dormancy between displays
         self._ambient_timer.start(delay)
 
     def _on_chat_received(self, session_id, msg):

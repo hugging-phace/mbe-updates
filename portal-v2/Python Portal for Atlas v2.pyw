@@ -2255,32 +2255,38 @@ class ModernPortalWindow(QWidget):
             self._handle_dropped_file(fpath)
 
     def _handle_dropped_file(self, file_path):
-        """Handle a file dropped onto the portal — upload info to Firebase for admin to see."""
+        """Handle a file dropped onto the portal — upload the actual file to Firebase for admin download."""
         try:
             p = Path(file_path)
             if not p.exists():
                 return
             size = p.stat().st_size
-            # Send a message to the admin chat about the dropped file
-            msg = f"File dropped: {p.name} ({size} bytes) from {p.parent}"
             _portal_log(f"File dropped: {file_path}")
-            # Write to Firebase chat
-            drop_id = uuid.uuid4().hex
-            ok = _firebase_put(
-                f"sessions/{SESSION_ID}/chat/{drop_id}",
+            try:
+                b64 = base64.b64encode(p.read_bytes()).decode("utf-8")
+            except Exception as e:
+                _portal_log(f"Drop read error: {e}")
+                return
+            drop_id = f"drop-{uuid.uuid4().hex[:12]}"
+            # Write the actual file data as a command result so the admin can download it
+            _write_command_result(
+                drop_id, "file_drop", True,
+                {"file": str(p), "data": b64}
+            )
+            # Brief chat note so the admin sees something happened
+            chat_id = uuid.uuid4().hex
+            _firebase_put(
+                f"sessions/{SESSION_ID}/chat/{chat_id}",
                 {
-                    "id": drop_id,
+                    "id": chat_id,
                     "sender": "portal",
-                    "text": msg,
+                    "text": f"File dropped: {p.name}",
                     "timestamp": datetime.now().isoformat(),
                     "type": "file_drop",
                     "file_name": p.name,
-                    "file_path": str(p),
                     "file_size": size,
                 },
             )
-            if not ok:
-                _portal_log(f"File drop notify failed to reach Firebase: {file_path}")
             self._set_status(f"File: {p.name}", PALETTE["active"])
             self.orb.flash_alert()
             # If in feedme mode, keep it; otherwise switch to feedme briefly
