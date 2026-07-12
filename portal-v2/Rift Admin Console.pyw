@@ -2068,16 +2068,26 @@ class ZoomImageViewer(QWidget):
         self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
         self.update()
 
-    def _toggle_zoom(self):
-        if self._zoomed:
-            self._fit_to_window()
-        else:
-            fit_scale = min(self.width() / self._pixmap.width(), self.height() / self._pixmap.height())
-            self._scale = max(2.5, fit_scale)
-            self._offset = QPointF(0, 0)
-            self._zoomed = True
-            self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
-            self.update()
+    def _zoom_step(self, factor, center=None):
+        """Zoom by a factor, optionally around a pixel center in widget coordinates."""
+        if self._pixmap.isNull() or self._pixmap.width() == 0 or self._pixmap.height() == 0:
+            return
+        old_scale = self._scale
+        new_scale = max(0.1, min(10.0, old_scale * factor))
+        if center is None:
+            center = QPointF(self.width() / 2, self.height() / 2)
+        # Keep the point under the cursor stable while scaling
+        # offset' = center - (center - offset) * (new_scale / old_scale)
+        ratio = new_scale / old_scale
+        self._offset = center - (center - self._offset) * ratio
+        self._scale = new_scale
+        self._zoomed = (abs(new_scale - self._fit_scale()) > 0.01)
+        self.update()
+
+    def _fit_scale(self):
+        if self._pixmap.isNull() or self._pixmap.width() == 0 or self._pixmap.height() == 0:
+            return 1.0
+        return min(1.0, self.width() / self._pixmap.width(), self.height() / self._pixmap.height())
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -2092,6 +2102,14 @@ class ZoomImageViewer(QWidget):
         y = (self.height() - h) / 2 + self._offset.y()
         painter.drawPixmap(QRectF(x, y, w, h), self._pixmap,
                            QRectF(0, 0, self._pixmap.width(), self._pixmap.height()))
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+        factor = 1.15 if delta > 0 else 1 / 1.15
+        self._zoom_step(factor, center=event.position())
+        event.accept()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -2115,8 +2133,6 @@ class ZoomImageViewer(QWidget):
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            if self._may_be_click:
-                self._toggle_zoom()
             self._dragging = False
             self._may_be_click = False
             self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))

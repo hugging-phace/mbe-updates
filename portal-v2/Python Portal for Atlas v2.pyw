@@ -1927,10 +1927,11 @@ class ModernPortalWindow(QWidget):
         self.executed_file = Path(__file__).resolve()
         self.user_closed_once = False
 
-        # Frameless + translucent compact portal — not always on top
+        # Frameless + translucent compact portal — shows in the taskbar
+        # so it can be recovered if it slips behind other windows.
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.Tool
+            Qt.WindowType.Window
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFixedSize(260, 360)
