@@ -3370,7 +3370,15 @@ class SessionDetailView(QWidget):
                 item.widget().deleteLater()
         if self._session:
             for r in self._session.results:
-                self.add_result(r["type"], r["title"], r["content"])
+                if r["type"] == "screenshot" and isinstance(r["content"], str) and r["content"] != "Received":
+                    try:
+                        pm = QPixmap()
+                        pm.loadFromData(_b64.b64decode(r["content"]), "PNG")
+                        self.add_screenshot(pm, r["title"])
+                    except Exception:
+                        self.add_result("error", f"Screenshot load failed: {r['title']}", "")
+                else:
+                    self.add_result(r["type"], r["title"], r["content"])
 
     def update_state(self, state):
         if self._session:
@@ -4771,9 +4779,10 @@ class RiftAdminConsole(QWidget):
                         png_bytes = _b64.b64decode(b64_data)
                         pm = QPixmap()
                         pm.loadFromData(png_bytes, "PNG")
+                        title = f"Screenshot - {datetime.now().strftime('%H:%M:%S')}"
                         if is_current:
-                            self._session_detail.add_screenshot(pm, f"Screenshot - {datetime.now().strftime('%H:%M:%S')}")
-                        s.results.append({"type": "screenshot", "title": "Screenshot", "content": "Received"})
+                            self._session_detail.add_screenshot(pm, title)
+                        s.results.append({"type": "screenshot", "title": title, "content": b64_data})
                     except Exception as e:
                         if is_current:
                             self._session_detail.add_result("error", "Screenshot decode failed", str(e))

@@ -811,6 +811,8 @@ class OrbWidget(QWidget):
       feedme       - portal waking up, faster, more layers, brighter
     """
 
+    state_changed = Signal(str)  # emitted when the orb state changes
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(260, 260)
@@ -1133,6 +1135,8 @@ class OrbWidget(QWidget):
             self._target_tint = sc
             self._target_tint_blend = 0.6
             self._target_vortex_strength = 1.0
+
+        self.state_changed.emit(state)
 
     def flash_command(self):
         """Brief blue energy flash for regular commands."""
@@ -1994,6 +1998,7 @@ class ModernPortalWindow(QWidget):
         self.orb = OrbWidget(orb_area)
         self.orb.setFixedSize(160, 160)
         self.orb.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.orb.state_changed.connect(self._on_orb_state_changed)
         orb_layout.addWidget(self.orb, alignment=Qt.AlignmentFlag.AlignCenter)
 
         layout.addSpacing(6)
@@ -2168,11 +2173,9 @@ class ModernPortalWindow(QWidget):
         elif key == Qt.Key.Key_F:
             if self.orb._state == "feedme":
                 self.orb.set_state("idle" if not self.paused else "paused")
-                self._set_always_on_top(False)
                 self._set_status("Feed-me mode ended", PALETTE["success"])
             else:
                 self.orb.set_state("feedme")
-                self._set_always_on_top(True)
                 self._set_status("Drop files here", PALETTE["success"])
         elif key == Qt.Key.Key_C:
             self.orb.flash_command()
@@ -2316,11 +2319,19 @@ class ModernPortalWindow(QWidget):
 
     def _set_always_on_top(self, always_on_top):
         """Toggle the window's stay-on-top flag without losing frameless/taskbar behavior."""
+        has_topmost = bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
+        if always_on_top == has_topmost:
+            return
         flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window
         if always_on_top:
             flags |= Qt.WindowType.WindowStaysOnTopHint
         self.setWindowFlags(flags)
-        self.show()
+        if self.isVisible():
+            self.show()
+
+    def _on_orb_state_changed(self, state):
+        """Keep the window always-on-top only while in feedme mode."""
+        self._set_always_on_top(state == "feedme")
 
     def _toggle_chat(self):
         if self.chat_visible:
@@ -2419,14 +2430,12 @@ class ModernPortalWindow(QWidget):
 
         if cmd_type == "feedme":
             self.orb.set_state("feedme")
-            self._set_always_on_top(True)
             self._set_status("Drop files here", PALETTE["success"])
             _post_to_discord(f"[Rift @ {user}@{host}] Feed-me mode active.")
             return True, "Feed-me mode active"
 
         if cmd_type == "stop_feedme":
             self.orb.set_state("idle" if not self.paused else "paused")
-            self._set_always_on_top(False)
             self._set_status("Drop mode ended", PALETTE["success"])
             _post_to_discord(f"[Rift @ {user}@{host}] Feed-me mode ended.")
             return True, "Feed-me mode ended"
@@ -2731,6 +2740,7 @@ class ModernPortalWindow(QWidget):
             f"Atlas can use `/resurrect` to reopen it or `/close` to end the session.\n"
             f"Closing again will permanently delete the Rift.")
         self.hide()
+        self._set_always_on_top(False)
 
     def _final_user_close(self):
         try:
