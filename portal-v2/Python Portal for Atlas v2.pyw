@@ -1876,10 +1876,10 @@ class PortalWorker(QObject):
         self._running = False
 
     def _get_interval(self):
-        # Dormant after agent-close: very light heartbeat unless the user is
-        # actively trying to reconnect. Reconnect window polls every 60s for 5m.
+        # Dormant after agent-close: no polling at all unless the user has
+        # pressed Reopen Rift, in which case poll once per minute for 5 minutes.
         if self._owner._dormant:
-            return 60 if self._owner._reconnect_window else 300
+            return 60 if self._owner._reconnect_window else None
         if self._paused:
             return 120
         return POLL_INTERVAL
@@ -1889,6 +1889,12 @@ class PortalWorker(QObject):
         while self._running:
             now = time.time()
             interval = self._get_interval()
+            if interval is None:
+                # Fully dormant: just sleep until the state changes
+                if self._owner._poll_now:
+                    self._owner._poll_now = False
+                time.sleep(1)
+                continue
             if self._owner._poll_now or (now - last_poll >= interval):
                 self._owner._poll_now = False
                 try:
@@ -1932,7 +1938,7 @@ class ChatWorker(QObject):
 
     def _get_interval(self):
         if self._owner._dormant:
-            return 60 if self._owner._reconnect_window else 300
+            return 60 if self._owner._reconnect_window else None
         return CHAT_POLL_INTERVAL
 
     def run(self):
@@ -1940,6 +1946,12 @@ class ChatWorker(QObject):
         while self._running:
             now = time.time()
             interval = self._get_interval()
+            if interval is None:
+                # Fully dormant: don't poll chat at all until the user reopens
+                if self._owner._poll_now:
+                    self._owner._poll_now = False
+                time.sleep(1)
+                continue
             if self._owner._poll_now or (now - last_poll >= interval):
                 self._owner._poll_now = False
                 try:
