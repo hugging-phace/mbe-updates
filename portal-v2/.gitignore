@@ -1,0 +1,18 @@
+# Portal runtime artifacts
+.portal_executed.json
+.portal_v2_debug.log
+__pycache__/
+*.pyc
+
+# Local backups (keep the two main .pyw files tracked)
+* - Copy.pyw
+* BACKUP.pyw
+* DIMENSIONAL_TEAR_BACKUP.pyw
+* GRAINY_BACKUP.pyw
+* INTERACTIVE_BACKUP.pyw
+* OUTSKIRT_RING_BACKUP.pyw
+* PARTICLE_BACKUP.pyw
+* RING_BACKUP.pyw
+* RING_STYLE_BACKUP.pyw
+* SIMPLE_BACKUP.pyw
+* WAVE_RING_BACKUP.pyw
