@@ -44,7 +44,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QTextEdit, QLineEdit, QFrame, QSizePolicy, QGraphicsDropShadowEffect
+    QScrollArea, QTextEdit, QLineEdit, QFrame, QSizePolicy, QGraphicsDropShadowEffect,
+    QDialog
 )
 
 # ------------------------------------------------------------------
