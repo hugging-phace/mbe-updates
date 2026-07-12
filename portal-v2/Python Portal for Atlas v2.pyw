@@ -224,6 +224,7 @@ def _mark_portal_opened():
             "opened_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         })
         _firebase_put(f"sessions/{SESSION_ID}/portal_connected", True)
+        _firebase_put(f"sessions/{SESSION_ID}/status", "open")
         _firebase_put(f"sessions/{SESSION_ID}/card_state", "connected")
     except Exception as e:
         _portal_log(f"_mark_portal_opened error: {e}")
@@ -1874,18 +1875,28 @@ class PortalWorker(QObject):
     def stop(self):
         self._running = False
 
+    def _get_interval(self):
+        # Dormant after agent-close: very light heartbeat unless the user is
+        # actively trying to reconnect. Reconnect window polls every 60s for 5m.
+        if self._owner._dormant:
+            return 60 if self._owner._reconnect_window else 300
+        if self._paused:
+            return 120
+        return POLL_INTERVAL
+
     def run(self):
+        last_poll = 0
         while self._running:
-            try:
-                self._poll_commands()
-            except Exception:
-                pass
-            # When paused, poll every 2 minutes; when active, every POLL_INTERVAL
-            interval = 120 if self._paused else POLL_INTERVAL
-            for _ in range(int(interval * 10)):
-                if not self._running:
-                    return
-                time.sleep(0.1)
+            now = time.time()
+            interval = self._get_interval()
+            if self._owner._poll_now or (now - last_poll >= interval):
+                self._owner._poll_now = False
+                try:
+                    self._poll_commands()
+                except Exception:
+                    pass
+                last_poll = time.time()
+            time.sleep(1)
 
     def _poll_commands(self):
         data = _firebase_get(f"sessions/{SESSION_ID}/commands")
@@ -1919,16 +1930,24 @@ class ChatWorker(QObject):
     def stop(self):
         self._running = False
 
+    def _get_interval(self):
+        if self._owner._dormant:
+            return 60 if self._owner._reconnect_window else 300
+        return CHAT_POLL_INTERVAL
+
     def run(self):
+        last_poll = 0
         while self._running:
-            try:
-                self._poll_chat()
-            except Exception:
-                pass
-            for _ in range(int(CHAT_POLL_INTERVAL * 10)):
-                if not self._running:
-                    return
-                time.sleep(0.1)
+            now = time.time()
+            interval = self._get_interval()
+            if self._owner._poll_now or (now - last_poll >= interval):
+                self._owner._poll_now = False
+                try:
+                    self._poll_chat()
+                except Exception:
+                    pass
+                last_poll = time.time()
+            time.sleep(1)
 
     def _poll_chat(self):
         data = _firebase_get(f"sessions/{SESSION_ID}/chat")
@@ -2096,20 +2115,20 @@ class RiftAgentClosedDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(12)
 
-        keep_btn = QPushButton("Keep Open")
-        keep_btn.setFixedHeight(32)
-        keep_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        keep_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        keep_btn.setStyleSheet(f"""
+        reopen_btn = QPushButton("Reopen Rift")
+        reopen_btn.setFixedHeight(32)
+        reopen_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        reopen_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        reopen_btn.setStyleSheet(f"""
             QPushButton {{
-                background: rgba(255, 255, 255, 12);
-                color: {PALETTE['muted']};
-                border: 1px solid rgba(255, 255, 255, 25);
+                background: rgba(40, 220, 100, 25);
+                color: #28dc64;
+                border: 1px solid rgba(40, 220, 100, 60);
                 border-radius: 6px;
             }}
-            QPushButton:hover {{ background: rgba(255, 255, 255, 22); color: {PALETTE['text']}; }}
+            QPushButton:hover {{ background: rgba(40, 220, 100, 45); }}
         """)
-        keep_btn.clicked.connect(self.reject)
+        reopen_btn.clicked.connect(self.reject)
 
         close_btn = QPushButton("Close Rift")
         close_btn.setFixedHeight(32)
@@ -2126,7 +2145,7 @@ class RiftAgentClosedDialog(QDialog):
         """)
         close_btn.clicked.connect(self.accept)
 
-        btn_layout.addWidget(keep_btn)
+        btn_layout.addWidget(reopen_btn)
         btn_layout.addWidget(close_btn)
         layout.addLayout(btn_layout)
 
@@ -2256,8 +2275,27 @@ class ModernPortalWindow(QWidget):
         """)
         self.chat_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.chat_btn.clicked.connect(self._toggle_chat)
+
+        self.reopen_btn = QPushButton("Reopen Rift")
+        self.reopen_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        self.reopen_btn.setFixedHeight(26)
+        self.reopen_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: rgba(40, 220, 100, 25);
+                color: #28dc64;
+                border-radius: 13px;
+                padding: 0 16px;
+                border: 1px solid rgba(40, 220, 100, 60);
+            }}
+            QPushButton:hover {{ background-color: rgba(40, 220, 100, 45); }}
+        """)
+        self.reopen_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.reopen_btn.clicked.connect(self._on_reopen_rift)
+        self.reopen_btn.setVisible(False)
+
         footer_layout.addStretch()
         footer_layout.addWidget(self.chat_btn)
+        footer_layout.addWidget(self.reopen_btn)
         footer_layout.addStretch()
         layout.addWidget(footer)
 
@@ -2303,6 +2341,14 @@ class ModernPortalWindow(QWidget):
         self._idle_color = PALETTE["accent"]
         self._active_color = PALETTE["active"]
 
+        # Dormant/reconnect state after the admin closes the session
+        self._dormant = False
+        self._reconnect_window = False
+        self._poll_now = False
+        self._reconnect_timer = QTimer(self)
+        self._reconnect_timer.setSingleShot(True)
+        self._reconnect_timer.timeout.connect(self._on_reconnect_timeout)
+
         self._center()
         self.show()
         self._set_status("Awaiting Rift connection", PALETTE["muted"])
@@ -2332,6 +2378,7 @@ class ModernPortalWindow(QWidget):
         elif cmd_type == "stop_test_pulse":
             self.orb.set_state("idle")
         elif cmd_type == "portal_open":
+            self._exit_dormant()
             self.orb.start_portal_opening()
             self._set_status("Rift opening...", PALETTE["active"])
         elif cmd_type == "rift_command":
@@ -2610,7 +2657,7 @@ class ModernPortalWindow(QWidget):
             f"**Reply from {user}@{host}**\n{text[:1500]}",), daemon=True).start()
 
     def _send_reminder(self):
-        if self.paused or self.user_closed_once:
+        if self.paused or self.user_closed_once or self._dormant:
             return
         _post_to_discord(
             f"**Reminder**\nRift `{SESSION_ID}` is still open and listening.\n"
@@ -3004,21 +3051,77 @@ class ModernPortalWindow(QWidget):
             pass
 
     def _force_close(self):
-        """Close the portal window and mark the session closed.
+        """Handle the admin closing the session.
 
-        NOTE: This intentionally does NOT delete the portal file. The previous
-        behaviour of self-destructing made local testing dangerous because a
-        single accidental "Close Session" click in the admin console would
-        permanently delete the portal.
+        The portal shows a dialog with 'Reopen Rift' and 'Close Rift'. Reopening
+        enters a 5-minute reconnect window where the portal polls Firebase once
+        per minute, waiting for the admin to actually click Open Rift. If that
+        doesn't happen, the portal goes dormant again with another Reopen Rift
+        prompt. This avoids burning Firebase quota while still allowing recovery.
         """
         try:
             _mark_session_closed()
         except Exception:
             pass
+        self._dormant = True
+        self._reconnect_window = False
+        self._reconnect_timer.stop()
+        self._set_status("Rift closing...", PALETTE["muted"])
+        self.orb.set_state("portal_closing")
+        self.chat_btn.setVisible(False)
+        self.reopen_btn.setVisible(False)
+        if self.chat_visible:
+            self._hide_chat()
+        QTimer.singleShot(3000, self._show_agent_closed_dialog)
+
+    def _enter_dormant(self):
+        """Put the portal into a low-polling dormant state after agent close."""
+        self._dormant = True
+        self._reconnect_window = False
+        self._reconnect_timer.stop()
+        self.orb.set_state("awaiting")
+        self._set_status("Rift dormant — click Reopen Rift to reconnect", PALETTE["muted"])
+        if self.chat_visible:
+            self._hide_chat()
+        self.chat_btn.setVisible(False)
+        self.reopen_btn.setVisible(True)
+
+    def _start_reconnect_window(self):
+        """User clicked Reopen Rift: poll for 5 minutes, once per minute, for an admin Open Rift."""
+        self._dormant = True
+        self._reconnect_window = True
+        self._poll_now = True
+        self._reconnect_timer.start(5 * 60 * 1000)  # 5 minutes
+        self.orb.set_state("portal_opening")
+        self._set_status("Reconnecting... waiting for Rift Agent", PALETTE["active"])
+        self.reopen_btn.setVisible(False)
+
+    def _on_reconnect_timeout(self):
+        """5-minute reconnect window expired without the admin engaging."""
+        self._enter_dormant()
+        self._show_agent_closed_dialog()
+
+    def _show_agent_closed_dialog(self):
         dialog = RiftAgentClosedDialog(self)
         dialog.move(self.mapToGlobal(self.rect().center() - dialog.rect().center()))
         if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Close Rift chosen
             self._acknowledge_agent_close()
+        else:
+            # Reopen Rift chosen
+            self._start_reconnect_window()
+
+    def _on_reopen_rift(self):
+        """Reopen Rift button clicked from the dormant UI."""
+        self._show_agent_closed_dialog()
+
+    def _exit_dormant(self):
+        """Admin engaged (portal_open command) — resume normal operation."""
+        self._dormant = False
+        self._reconnect_window = False
+        self._reconnect_timer.stop()
+        self.chat_btn.setVisible(True)
+        self.reopen_btn.setVisible(False)
 
     def _acknowledge_agent_close(self):
         """User chose to close their Rift after the agent ended the session."""
@@ -3093,7 +3196,7 @@ def main():
     def _heartbeat_loop():
         while getattr(window, "_running", True):
             try:
-                if getattr(window, "_registered", False):
+                if getattr(window, "_registered", False) and not getattr(window, "_dormant", False):
                     _update_last_seen()
             except Exception as e:
                 _portal_log(f"_heartbeat_loop error: {e}")
