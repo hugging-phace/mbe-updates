@@ -2128,22 +2128,22 @@ class RiftAgentClosedDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(12)
 
-        reopen_btn = QPushButton("Reopen Rift")
-        reopen_btn.setFixedHeight(32)
-        reopen_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        reopen_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        reopen_btn.setStyleSheet(f"""
+        dormant_btn = QPushButton("Go Dormant")
+        dormant_btn.setFixedHeight(32)
+        dormant_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        dormant_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        dormant_btn.setStyleSheet(f"""
             QPushButton {{
-                background: rgba(40, 220, 100, 25);
-                color: #28dc64;
-                border: 1px solid rgba(40, 220, 100, 60);
+                background: rgba(154, 89, 182, 35);
+                color: {PALETTE['accent_bright']};
+                border: 1px solid rgba(154, 89, 182, 60);
                 border-radius: 6px;
             }}
-            QPushButton:hover {{ background: rgba(40, 220, 100, 45); }}
+            QPushButton:hover {{ background: rgba(154, 89, 182, 55); }}
         """)
-        reopen_btn.clicked.connect(self.reject)
+        dormant_btn.clicked.connect(self.reject)
 
-        close_btn = QPushButton("Close Rift")
+        close_btn = QPushButton("Close Also")
         close_btn.setFixedHeight(32)
         close_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
         close_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -2158,8 +2158,97 @@ class RiftAgentClosedDialog(QDialog):
         """)
         close_btn.clicked.connect(self.accept)
 
-        btn_layout.addWidget(reopen_btn)
+        btn_layout.addWidget(dormant_btn)
         btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+        self._drag_pos = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        event.accept()
+
+
+class RiftReopenConfirmDialog(QDialog):
+    """Confirmation shown when the user presses the persistent Reopen Rift button."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedSize(420, 220)
+
+        container = QFrame(self)
+        container.setGeometry(0, 0, 420, 220)
+        container.setStyleSheet(f"""
+            QFrame {{
+                background-color: rgba(18, 17, 30, 245);
+                border: 1px solid rgba(154, 89, 182, 50);
+                border-radius: 16px;
+            }}
+        """)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(14)
+
+        title = QLabel("Reopen this Rift?")
+        title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {PALETTE['text']}; background: transparent; border: none;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        msg = QLabel("Are you sure you want to reopen this Rift? If the Agent is finished working this can be closed.")
+        msg.setFont(QFont("Segoe UI", 10))
+        msg.setStyleSheet(f"color: {PALETTE['muted']}; background: transparent; border: none;")
+        msg.setWordWrap(True)
+        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(msg, 1)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(12)
+
+        close_btn = QPushButton("Close")
+        close_btn.setFixedHeight(32)
+        close_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        close_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 255, 255, 12);
+                color: {PALETTE['muted']};
+                border: 1px solid rgba(255, 255, 255, 25);
+                border-radius: 6px;
+            }}
+            QPushButton:hover {{ background: rgba(255, 255, 255, 22); color: {PALETTE['text']}; }}
+        """)
+        close_btn.clicked.connect(self.reject)
+
+        reopen_btn = QPushButton("Yes Reopen")
+        reopen_btn.setFixedHeight(32)
+        reopen_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        reopen_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        reopen_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(154, 89, 182, 35);
+                color: {PALETTE['accent_bright']};
+                border: 1px solid rgba(154, 89, 182, 60);
+                border-radius: 6px;
+            }}
+            QPushButton:hover {{ background: rgba(154, 89, 182, 55); }}
+        """)
+        reopen_btn.clicked.connect(self.accept)
+
+        btn_layout.addWidget(close_btn)
+        btn_layout.addWidget(reopen_btn)
         layout.addLayout(btn_layout)
 
         self._drag_pos = None
@@ -2294,13 +2383,13 @@ class ModernPortalWindow(QWidget):
         self.reopen_btn.setFixedHeight(26)
         self.reopen_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: rgba(40, 220, 100, 25);
-                color: #28dc64;
+                background-color: rgba(154, 89, 182, 35);
+                color: {PALETTE['accent_bright']};
                 border-radius: 13px;
                 padding: 0 16px;
-                border: 1px solid rgba(40, 220, 100, 60);
+                border: 1px solid rgba(154, 89, 182, 60);
             }}
-            QPushButton:hover {{ background-color: rgba(40, 220, 100, 45); }}
+            QPushButton:hover {{ background-color: rgba(154, 89, 182, 55); }}
         """)
         self.reopen_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.reopen_btn.clicked.connect(self._on_reopen_rift)
@@ -3066,11 +3155,11 @@ class ModernPortalWindow(QWidget):
     def _force_close(self):
         """Handle the admin closing the session.
 
-        The portal shows a dialog with 'Reopen Rift' and 'Close Rift'. Reopening
-        enters a 5-minute reconnect window where the portal polls Firebase once
-        per minute, waiting for the admin to actually click Open Rift. If that
-        doesn't happen, the portal goes dormant again with another Reopen Rift
-        prompt. This avoids burning Firebase quota while still allowing recovery.
+        The portal shows a dialog with 'Go Dormant' and 'Close Also'. Going
+        dormant puts the portal to sleep with a persistent 'Reopen Rift' button.
+        Reopening starts a 5-minute reconnect window where the portal polls Firebase
+        once per minute, waiting for the admin to actually click Open Rift.
+        This avoids burning Firebase quota while still allowing recovery.
         """
         try:
             _mark_session_closed()
@@ -3112,21 +3201,31 @@ class ModernPortalWindow(QWidget):
     def _on_reconnect_timeout(self):
         """5-minute reconnect window expired without the admin engaging."""
         self._enter_dormant()
-        self._show_agent_closed_dialog()
+        dialog = RiftReopenConfirmDialog(self)
+        dialog.move(self.mapToGlobal(self.rect().center() - dialog.rect().center()))
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._start_reconnect_window()
+        else:
+            self._acknowledge_agent_close()
 
     def _show_agent_closed_dialog(self):
         dialog = RiftAgentClosedDialog(self)
         dialog.move(self.mapToGlobal(self.rect().center() - dialog.rect().center()))
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            # Close Rift chosen
+            # Close Also chosen
             self._acknowledge_agent_close()
         else:
-            # Reopen Rift chosen
-            self._start_reconnect_window()
+            # Go Dormant chosen
+            self._enter_dormant()
 
     def _on_reopen_rift(self):
         """Reopen Rift button clicked from the dormant UI."""
-        self._show_agent_closed_dialog()
+        dialog = RiftReopenConfirmDialog(self)
+        dialog.move(self.mapToGlobal(self.rect().center() - dialog.rect().center()))
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._start_reconnect_window()
+        else:
+            self._acknowledge_agent_close()
 
     def _exit_dormant(self):
         """Admin engaged (portal_open command) — resume normal operation."""
