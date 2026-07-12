@@ -530,11 +530,11 @@ class FrostedContainer(QFrame):
         rect = self.rect()
         radius = 22
 
-        # Frosted glass fill: semi-transparent dark gradient
+        # Frosted glass fill: slightly darker and less transparent
         fill_grad = QLinearGradient(rect.left(), rect.top(), rect.left(), rect.bottom())
-        fill_grad.setColorAt(0, QColor(26, 24, 42, 238))
-        fill_grad.setColorAt(0.5, QColor(20, 19, 34, 245))
-        fill_grad.setColorAt(1, QColor(14, 13, 26, 250))
+        fill_grad.setColorAt(0, QColor(22, 21, 38, 245))
+        fill_grad.setColorAt(0.5, QColor(16, 15, 30, 250))
+        fill_grad.setColorAt(1, QColor(10, 9, 22, 252))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(fill_grad))
         painter.drawRoundedRect(rect, radius, radius)
@@ -2168,9 +2168,11 @@ class ModernPortalWindow(QWidget):
         elif key == Qt.Key.Key_F:
             if self.orb._state == "feedme":
                 self.orb.set_state("idle" if not self.paused else "paused")
+                self._set_always_on_top(False)
                 self._set_status("Feed-me mode ended", PALETTE["success"])
             else:
                 self.orb.set_state("feedme")
+                self._set_always_on_top(True)
                 self._set_status("Drop files here", PALETTE["success"])
         elif key == Qt.Key.Key_C:
             self.orb.flash_command()
@@ -2312,6 +2314,14 @@ class ModernPortalWindow(QWidget):
     def _set_status(self, text, color=None):
         self.status_label.setText(text)
 
+    def _set_always_on_top(self, always_on_top):
+        """Toggle the window's stay-on-top flag without losing frameless/taskbar behavior."""
+        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window
+        if always_on_top:
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        self.setWindowFlags(flags)
+        self.show()
+
     def _toggle_chat(self):
         if self.chat_visible:
             self._hide_chat()
@@ -2409,12 +2419,14 @@ class ModernPortalWindow(QWidget):
 
         if cmd_type == "feedme":
             self.orb.set_state("feedme")
+            self._set_always_on_top(True)
             self._set_status("Drop files here", PALETTE["success"])
             _post_to_discord(f"[Rift @ {user}@{host}] Feed-me mode active.")
             return True, "Feed-me mode active"
 
         if cmd_type == "stop_feedme":
             self.orb.set_state("idle" if not self.paused else "paused")
+            self._set_always_on_top(False)
             self._set_status("Drop mode ended", PALETTE["success"])
             _post_to_discord(f"[Rift @ {user}@{host}] Feed-me mode ended.")
             return True, "Feed-me mode ended"

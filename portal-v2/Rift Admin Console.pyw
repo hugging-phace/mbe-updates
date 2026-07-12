@@ -2068,18 +2068,15 @@ class ZoomImageViewer(QWidget):
         self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
         self.update()
 
-    def _zoom_step(self, factor, center=None):
-        """Zoom by a factor, optionally around a pixel center in widget coordinates."""
+    def _zoom_step(self, factor):
+        """Zoom by a factor around the center of the view, keeping the image centered."""
         if self._pixmap.isNull() or self._pixmap.width() == 0 or self._pixmap.height() == 0:
             return
         old_scale = self._scale
         new_scale = max(0.1, min(10.0, old_scale * factor))
-        if center is None:
-            center = QPointF(self.width() / 2, self.height() / 2)
-        # Keep the point under the cursor stable while scaling
-        # offset' = center - (center - offset) * (new_scale / old_scale)
+        # Scale the existing offset so the image stays where it is relative to center
         ratio = new_scale / old_scale
-        self._offset = center - (center - self._offset) * ratio
+        self._offset = self._offset * ratio
         self._scale = new_scale
         self._zoomed = (abs(new_scale - self._fit_scale()) > 0.01)
         self.update()
@@ -2108,7 +2105,7 @@ class ZoomImageViewer(QWidget):
         if delta == 0:
             return
         factor = 1.15 if delta > 0 else 1 / 1.15
-        self._zoom_step(factor, center=event.position())
+        self._zoom_step(factor)
         event.accept()
 
     def mousePressEvent(self, event):
