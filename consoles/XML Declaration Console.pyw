@@ -583,7 +583,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 #   BUILTIN_CODES) so user edits are never lost when code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "XML Declaration Console"
-APP_VERSION = "2.0.3"
+APP_VERSION = "2.0.4"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -13007,13 +13007,25 @@ class UploadWindow(SupportMixin):
         declaration values. This preserves all external links, drawings,
         and formulas — no Excel process needed, no corruption.
         """
-        if not self._decl_numbers:
-            # They haven't copied/uploaded declaration numbers yet.
+        # The master declaration number is always present in _decl_numbers
+        # (it's entered in the gate dialog during upload), so a non-empty dict
+        # is NOT enough to know the user has house numbers to paste. We
+        # specifically need HOUSE (CBY) declaration numbers to match against
+        # CBY rows in the manifest. If none are present yet, run the
+        # "Copy Decl #s from COLS" flow first — exactly as if nothing had been
+        # captured — instead of proceeding and failing with "No House Declarations".
+        def _has_house_decls():
+            return any(
+                dn and re.search(r'CBY\s*(\d+)', fn, re.IGNORECASE)
+                for fn, dn in self._decl_numbers.items())
+
+        if not _has_house_decls():
+            # They haven't copied/uploaded the house declaration numbers yet.
             # Replicate the "Copy Decl #s from COLS" flow automatically
             # so they see the same review dialog before pasting.
             proceed = messagebox.askyesno(
                 "Copy Declaration Numbers First",
-                "You haven't copied any declaration numbers yet.\n\n"
+                "You haven't copied the house declaration numbers yet.\n\n"
                 "Click Yes to copy them from the COLS page now\n"
                 "(same as clicking 'Copy Decl #s from COLS').\n\n"
                 "You'll be able to review and confirm the list before\n"
@@ -13021,7 +13033,7 @@ class UploadWindow(SupportMixin):
             if not proceed:
                 return
             self._copy_decl_from_cols()
-            if not self._decl_numbers:
+            if not _has_house_decls():
                 # Copy step already showed its own message (no browser,
                 # nothing found, or the user cancelled the review dialog)
                 return
