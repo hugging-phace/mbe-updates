@@ -1,5 +1,5 @@
 {
-  "version": "2.0.3",
-  "changelog": "Fixed portal dialog freeze after folder selection; adjusted portal icon color to be slightly more purple.",
+  "version": "2.0.4",
+  "changelog": "Fixed 'name smtplib is not defined' crash when sending invoice request emails (mass mailing and standalone mode). Also fixed a follow-on error that could hide the real failure message when a standalone send failed.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Invoice%20Request%20Console.pyw"
 }

@@ -10,6 +10,7 @@ import uuid
 import traceback
 import importlib
 import subprocess
+import smtplib
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -125,7 +126,7 @@ HELPFUL_LINKS_PRESETS = {
 # REMOTE SUPPORT: BUG REPORTING TO DISCORD
 # ==============================================================================
 APP_NAME = "Invoice Request Console"
-APP_VERSION = "2.0.3"
+APP_VERSION = "2.0.4"
 DEVELOPER_NAME = "Atlas Ramoon"
 BUG_REPORT_WEBHOOK_URL = (
     "https://discord.com/api/webhooks/1524620703259951104/"
@@ -1037,8 +1038,12 @@ def process_queue():
                     # Update UI on main thread after successful send
                     root.after(0, lambda: on_send_success())
                 except Exception as e:
+                    # Capture the message now: the exception variable `e` is
+                    # cleared when the except block exits, so the deferred
+                    # callback must not reference it directly.
+                    err_msg = str(e)
                     # Update UI on main thread after error
-                    root.after(0, lambda: on_send_error(str(e)))
+                    root.after(0, lambda: on_send_error(err_msg))
             
             threading.Thread(target=send_and_reset, daemon=True).start()
         else:
