@@ -1,5 +1,5 @@
 {
   "version": "2.0.4",
-  "changelog": "Fixed 'No House Declarations' error when clicking Paste to Manifest: the master declaration number alone no longer counts as 'declaration numbers copied', so the app now correctly offers to copy the house (CBY) declaration numbers from COLS first instead of erroring.",
+  "changelog": "Fixed 'No House Declarations' error when clicking Paste to Manifest: the master declaration number alone no longer counts as 'declaration numbers copied', so the app now correctly offers to copy the house (CBY) declaration numbers from COLS first instead of erroring. Also fixed 4 error handlers that could show a blank/wrong message (e.g. Excel sync, Edge startup, COLS link lookup) instead of the real failure.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/XML%20Declaration%20Console.pyw"
 }

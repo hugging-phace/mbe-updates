@@ -9963,7 +9963,8 @@ class TINWindow(SupportMixin):
             try:
                 import openpyxl
             except Exception as e:
-                self.win.after(0, lambda: self._sync_error(prog_win, f"Could not load Excel engine:\n\n{e}"))
+                err_msg = str(e)
+                self.win.after(0, lambda: self._sync_error(prog_win, f"Could not load Excel engine:\n\n{err_msg}"))
                 return
 
             self.win.after(0, lambda: self._update_sync_progress(0, "Reading file..."))
@@ -9972,7 +9973,8 @@ class TINWindow(SupportMixin):
             try:
                 wb = openpyxl.load_workbook(file_path, data_only=True, read_only=True)
             except Exception as e:
-                self.win.after(0, lambda: self._sync_error(prog_win, f"Could not open the file:\n\n{e}"))
+                err_msg = str(e)
+                self.win.after(0, lambda: self._sync_error(prog_win, f"Could not open the file:\n\n{err_msg}"))
                 return
 
             # Check for the AOA Log sheet (case-insensitive, space-insensitive)
@@ -11112,8 +11114,9 @@ class UploadWindow(SupportMixin):
             self._driver = webdriver.Edge(options=options)
             self._driver.get(self.UPLOAD_URL)
         except Exception as e:
+            err_msg = str(e)
             self.win.after(0, lambda: self._status.configure(
-                text=f"Failed to start Edge: {e}"))
+                text=f"Failed to start Edge: {err_msg}"))
             self.win.after(0, lambda: self._start_btn.configure(
                 state="normal", text="Click here to Begin"))
             return
@@ -12165,8 +12168,9 @@ class UploadWindow(SupportMixin):
             links = self._driver.find_elements(
                 By.XPATH, "//a[contains(text(), 'Upload Supporting Documents')]")
         except Exception as e:
+            err_msg = str(e)
             self.win.after(0, lambda: self._status.configure(
-                text=f"Error finding links: {e}"))
+                text=f"Error finding links: {err_msg}"))
             self.win.after(0, lambda: self._attach_btn.configure(state="normal"))
             self._uploading = False
             return
