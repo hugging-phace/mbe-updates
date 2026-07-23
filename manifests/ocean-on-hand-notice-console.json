@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
-  "changelog": "Fixed portal dialog appearing behind bug window.",
+  "version": "1.0.3",
+  "changelog": "Fixed 'name smtplib is not defined' crash when sending ocean cargo hold notification emails (the smtplib module was used but never imported).",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Ocean%20On-Hand%20Notice%20Console.pyw"
 }

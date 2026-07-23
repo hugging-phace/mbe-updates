@@ -13,6 +13,7 @@ import getpass
 import uuid
 import importlib
 import subprocess
+import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
@@ -6500,7 +6501,7 @@ CLIENT_MARKER_END = "# === CLIENT EMAILS END ==="
 # REMOTE SUPPORT CONSTANTS (bug reporting + self-update)
 # ==============================================================================
 APP_NAME = "Ocean On-Hand Notice Console"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
