@@ -6504,7 +6504,7 @@ CLIENT_MARKER_END = "# === CLIENT EMAILS END ==="
 # REMOTE SUPPORT CONSTANTS (bug reporting + self-update)
 # ==============================================================================
 APP_NAME = "Ocean On-Hand Notice Console"
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.0.8"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
@@ -6570,6 +6570,40 @@ def _magnet_glyph_points(cx, cy, r):
             cx, cy + r, cx - c, cy + s, cx - c, cy - s]
 
 
+def _get_installed_client_version(folder, is_mac):
+    """Return the version string embedded in the Magnet Client bundle, or None."""
+    if is_mac:
+        version_path = os.path.join(folder, "MagnetClient.app", "Contents", "Resources", "version.txt")
+    else:
+        version_path = os.path.join(folder, "MagnetClient", "version.txt")
+    if os.path.exists(version_path):
+        try:
+            with open(version_path, "r") as f:
+                return f.read().strip()
+        except Exception:
+            return None
+    return None
+
+
+def _remove_existing_client(folder, is_mac):
+    """Delete the existing Magnet Client so a new one can be extracted in its place."""
+    import shutil
+    if is_mac:
+        app_path = os.path.join(folder, "MagnetClient.app")
+        if os.path.exists(app_path):
+            shutil.rmtree(app_path, ignore_errors=True)
+    else:
+        exe_path = os.path.join(folder, "MagnetClient.exe")
+        if os.path.exists(exe_path):
+            try:
+                os.remove(exe_path)
+            except Exception:
+                pass
+        client_dir = os.path.join(folder, "MagnetClient")
+        if os.path.isdir(client_dir):
+            shutil.rmtree(client_dir, ignore_errors=True)
+
+
 def _get_latest_magnet_release_tag():
     """Follow the GitHub 'latest' redirect and return the release tag name."""
     req = urllib.request.Request(
@@ -6597,7 +6631,7 @@ def _summon_portal(parent_root):
     if not folder:
         return
 
-    # Step 3: Find existing portable client or download it
+    # Step 3: Determine if we need to download or replace the client
     is_mac = platform.system() == "Darwin"
     if is_mac:
         app_path = os.path.join(folder, "MagnetClient.app")
@@ -6606,18 +6640,43 @@ def _summon_portal(parent_root):
         exe_path = os.path.join(folder, "MagnetClient.exe")
         if not os.path.exists(exe_path):
             exe_path = os.path.join(folder, "MagnetClient", "MagnetClient.exe")
-    client_already_present = os.path.exists(exe_path) or (is_mac and os.path.exists(app_path))
 
-    if not client_already_present:
+    try:
+        latest_tag = _get_latest_magnet_release_tag()
+    except Exception:
+        latest_tag = "v2.0.67"
+    latest_version = _version_tuple(latest_tag)
+
+    installed_version = _get_installed_client_version(folder, is_mac)
+    needs_download = False
+    if is_mac:
+        needs_download = not os.path.exists(app_path)
+    else:
+        needs_download = not os.path.exists(exe_path)
+
+    if not needs_download:
+        if installed_version is None:
+            # Older client without a version file; replace it.
+            needs_download = True
+        elif _version_tuple(installed_version) < latest_version:
+            needs_download = True
+
+    if needs_download:
+        if os.path.exists(app_path) or os.path.exists(exe_path):
+            try:
+                _remove_existing_client(folder, is_mac)
+            except Exception as e:
+                messagebox.showerror(
+                    "Could Not Replace Client",
+                    f"An existing Magnet Client was found but could not be removed:\n\n{e}\n\n"
+                    "Please quit the Magnet Client if it is running and try again.",
+                    parent=parent_root)
+                return
         asset = "MagnetClient-macos.zip" if is_mac else "MagnetClient-windows.zip"
         try:
-            try:
-                tag = _get_latest_magnet_release_tag()
-            except Exception:
-                tag = "v2.0.67"
             download_url = (
                 "https://github.com/hugging-phace/rift-portal/releases/download/"
-                f"{tag}/{asset}")
+                f"{latest_tag}/{asset}")
             req = urllib.request.Request(
                 download_url,
                 headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
