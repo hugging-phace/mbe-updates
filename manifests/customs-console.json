@@ -1,5 +1,5 @@
 {
-  "version": "1.0.6",
-  "changelog": "Fixed portal dialog appearing behind bug window.",
+  "version": "1.0.7",
+  "changelog": "Bug dialog portal button now launches the Magnet Client v2 using the three-node glyph icon.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Packages%20at%20Customs%20Console.pyw"
 }

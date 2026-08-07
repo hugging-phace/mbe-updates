@@ -3,6 +3,8 @@ import sys
 import re
 import json
 import urllib.request
+import zipfile
+import io
 import threading
 import platform
 import getpass
@@ -126,96 +128,97 @@ HELPFUL_LINKS_PRESETS = {
 # REMOTE SUPPORT: BUG REPORTING TO DISCORD
 # ==============================================================================
 APP_NAME = "Invoice Request Console"
-APP_VERSION = "2.0.4"
+APP_VERSION = "2.0.5"
 DEVELOPER_NAME = "Atlas Ramoon"
 BUG_REPORT_WEBHOOK_URL = (
     "https://discord.com/api/webhooks/1524620703259951104/"
     "fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
 )
 
-# Portal for remote support — downloaded from GitHub on demand.
-PORTAL_URL = (
-    "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/"
-    "consoles/Python%20Portal%20for%20Atlas.pyw"
-)
+# Magnet Client v2 remote support — helpers for the launcher glyph and latest release tag.
+def _magnet_glyph_points(cx, cy, r):
+    """Return a flat list of pointy-top hexagon vertex coordinates for tk.Canvas.create_polygon."""
+    s = 0.5 * r
+    c = 0.8660254 * r
+    return [cx, cy - r, cx + c, cy - s, cx + c, cy + s,
+            cx, cy + r, cx - c, cy + s, cx - c, cy - s]
+
+
+def _get_latest_magnet_release_tag():
+    """Follow the GitHub 'latest' redirect and return the release tag name."""
+    req = urllib.request.Request(
+        "https://github.com/hugging-phace/rift-portal/releases/latest",
+        headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        final_url = resp.geturl()
+    return final_url.rstrip("/").split("/")[-1]
 
 
 def _summon_portal(parent_root):
-    """Download the Python Portal for Atlas to a user-chosen folder."""
+    """Download and launch the latest Magnet Client v2 for remote support."""
     # Step 1: Confirm with explanation
     confirm = messagebox.askyesno(
-        "Open a Portal for Atlas?",
-        "This will open a remote IT support portal that lets Atlas\n"
-        "diagnose and fix issues on your machine from afar.\n\n"
-        "Peace of mind:\n"
-        "Atlas cannot see your screen or control your mouse.\n"
-        "He can only carry out file-level tasks such as reading\n"
-        "nearby files, adding or replacing files, and running\n"
-        "Python scripts you send.\n\n"
-        "You'll choose where the problem is, then a small portal\n"
-        "file will be saved there for you to open.\n\n"
-        "Atlas will be notified that you've opened it.\n"
-        "When the issue is resolved, you can close and delete it.\n\n"
-        "Continue?",
+        "Open a Magnet connection?",
+        "This will download and launch the Magnet Client v2 so Atlas\ncan connect to this machine for remote support.\n\nChoose a folder where the client should be saved, then it will\nrun from your system tray (Windows) or menu bar (Mac).\n\nContinue?",
         parent=parent_root)
     if not confirm:
         return
 
     # Step 2: Choose folder
     folder = filedialog.askdirectory(
-        title="Where is the problem located? Choose a folder:",
+        title="Choose a folder for the Magnet Client:",
         parent=parent_root)
     if not folder:
         return
 
-    # Step 3: Download fresh portal with cache-busting (no raw CDN stale content)
-    import time as _time
+    # Step 3: Download the latest release asset
     is_mac = platform.system() == "Darwin"
-    ext = ".py" if is_mac else ".pyw"
-    dest = os.path.join(folder, f"Python Portal for Atlas{ext}")
+    asset = "MagnetClient-macos.zip" if is_mac else "MagnetClient-windows.zip"
     try:
-        busted_url = f"{PORTAL_URL}?t={int(_time.time())}"
+        tag = _get_latest_magnet_release_tag()
+        download_url = (
+            "https://github.com/hugging-phace/rift-portal/releases/download/"
+            f"{tag}/{asset}")
         req = urllib.request.Request(
-            busted_url,
-            headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}",
-                     "Cache-Control": "no-cache"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+            download_url,
+            headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
+        with urllib.request.urlopen(req, timeout=120) as resp:
             data = resp.read()
-        with open(dest, "wb") as f:
-            f.write(data)
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            zf.extractall(folder)
     except Exception as e:
-        messagebox.showerror("Download Failed",
-            f"Could not download the portal:\n\n{e}\n\n"
-            "Please check your internet connection and try again.",
+        messagebox.showerror(
+            "Download Failed",
+            f"Could not download the Magnet Client:\n\n{e}\n\nPlease check your internet connection and try again.",
             parent=parent_root)
         return
 
     # Step 4: Launch it automatically
     try:
         if is_mac:
-            # On Mac, use python3 explicitly and avoid Windows-only flags
-            subprocess.Popen(
-                ["python3", dest, "--color=#e0a8e0"],
-                start_new_session=True,
-            )
+            app_path = os.path.join(folder, "MagnetClient.app")
+            exe_path = os.path.join(app_path, "Contents", "MacOS", "MagnetClient")
+            if not os.path.exists(app_path):
+                raise FileNotFoundError("MagnetClient.app not found after extracting")
+            if os.path.exists(exe_path):
+                os.chmod(exe_path, 0o755)
+            subprocess.run(["xattr", "-cr", app_path], capture_output=True)
+            subprocess.Popen(["/usr/bin/open", app_path], start_new_session=True)
         else:
-            subprocess.Popen(
-                [sys.executable, dest, "--color=#e0a8e0"],
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
+            exe_path = os.path.join(folder, "MagnetClient", "MagnetClient.exe")
+            if not os.path.exists(exe_path):
+                raise FileNotFoundError("MagnetClient.exe not found after extracting")
+            subprocess.Popen([exe_path], creationflags=subprocess.CREATE_NO_WINDOW)
     except Exception as e:
         messagebox.showerror(
             "Could Not Launch",
-            f"The portal was saved to:\n\n{dest}\n\n"
-            f"But it could not be launched automatically:\n{e}\n\n"
-            f"Please open it manually.",
+            f"The Magnet Client was saved to:\n\n{folder}\n\nBut it could not be launched automatically:\n{e}\n\nPlease open it manually.",
             parent=parent_root)
         return
 
     messagebox.showinfo(
-        "Portal Opened",
-        "The portal is now opening.\n\n"
-        "Leave it running and let Atlas know it's open.",
+        "Magnet Client Started",
+        "The Magnet Client is starting.\n\nIt will appear in your tray/menu bar. Let Atlas know it's open.",
         parent=parent_root)
 
 UPDATE_MANIFEST_URL = (
@@ -1449,12 +1452,16 @@ def process_queue():
         btns = ctk.CTkFrame(dlg, fg_color="transparent")
         btns.pack(side="bottom", fill="x", padx=16, pady=(0, 14))
 
-        # Remote support portal icon (bottom-right corner, in button row)
+        # Magnet (three-node) glyph
         _portal_canvas = tk.Canvas(btns, width=24, height=24,
                                     bg="#1a1a1a", highlightthickness=0)
         _portal_canvas.pack(side="right")
-        _portal_canvas.create_oval(2, 2, 22, 22, outline="#e0a8e0", width=2)
-        _portal_canvas.create_oval(7, 7, 17, 17, fill="#e0a8e0", outline="")
+        _color = "#e0a8e0"
+        _portal_canvas.create_line(9, 12, 16, 9, fill=_color, width=1)
+        _portal_canvas.create_line(9, 12, 16, 15, fill=_color, width=1)
+        _portal_canvas.create_polygon(_magnet_glyph_points(9, 12, 3.4), outline=_color, fill="", width=1)
+        _portal_canvas.create_polygon(_magnet_glyph_points(16, 9, 2.0), outline=_color, fill="", width=1)
+        _portal_canvas.create_polygon(_magnet_glyph_points(16, 15, 2.0), outline=_color, fill="", width=1)
         _portal_canvas.configure(cursor="hand2")
         _portal_canvas.bind("<Button-1>", lambda e: (dlg.destroy(), _summon_portal(root)))
 

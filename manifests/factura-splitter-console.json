@@ -1,5 +1,5 @@
 {
-  "version": "1.0.5",
-  "changelog": "Fixed portal dialog appearing behind bug window.",
+  "version": "1.0.6",
+  "changelog": "Bug dialog portal button now launches the Magnet Client v2 using the three-node glyph icon.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Factura%20Splitter%20Console.pyw"
 }
