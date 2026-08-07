@@ -1,5 +1,6 @@
 {
-  "version": "1.0.4",
-  "changelog": "Bug dialog portal button now launches the Magnet Client v2 using the three-node glyph icon.",
-  "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Ocean%20On-Hand%20Notice%20Console.pyw"
+  "version": "1.0.5",
+  "changelog": "Bug dialog portal button now launches the Magnet Client v2 using the three-node glyph icon. Also fixes an updater issue where the download URL was not found.",
+  "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Ocean%20On-Hand%20Notice%20Console.pyw",
+  "download_url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Ocean%20On-Hand%20Notice%20Console.pyw"
 }

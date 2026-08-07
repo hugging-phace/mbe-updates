@@ -6502,7 +6502,7 @@ CLIENT_MARKER_END = "# === CLIENT EMAILS END ==="
 # REMOTE SUPPORT CONSTANTS (bug reporting + self-update)
 # ==============================================================================
 APP_NAME = "Ocean On-Hand Notice Console"
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
@@ -6686,7 +6686,7 @@ def _check_for_update():
         if not latest:
             return None
         if _version_tuple(latest) > _version_tuple(APP_VERSION):
-            download_url = manifest.get("download_url", "").strip()
+            download_url = (manifest.get("download_url") or manifest.get("url", "")).strip()
             changelog = manifest.get("changelog", "No changelog provided.")
             return (latest, download_url, changelog)
     except Exception:
