@@ -1,5 +1,5 @@
 {
-  "version": "1.0.7",
-  "changelog": "Bug dialog portal button now launches the Magnet Client v2 using the three-node glyph icon.",
+  "version": "1.0.8",
+  "changelog": "Magnet Client launcher now finds an existing portable client first and only tries to download if missing; falls back to tag v2.0.67.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Packages%20at%20Customs%20Console.pyw"
 }
