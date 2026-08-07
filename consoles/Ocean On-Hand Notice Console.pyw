@@ -15,6 +15,7 @@ import uuid
 import importlib
 import subprocess
 import smtplib
+import imaplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
@@ -105,6 +106,7 @@ MODERN_FONT = get_platform_font()
 # ==============================================================================
 SMTP_SERVER = "smtp.office365.com"
 SMTP_PORT = 587
+IMAP_SERVER = "outlook.office365.com"
 KEYRING_SERVICE_NAME = "MBE_Automation_OCEAN"
 SMTP_LOGIN = "cby@mbe.ky"
 SENDER_EMAIL = "oceanship@mbe.ky"
@@ -6502,7 +6504,7 @@ CLIENT_MARKER_END = "# === CLIENT EMAILS END ==="
 # REMOTE SUPPORT CONSTANTS (bug reporting + self-update)
 # ==============================================================================
 APP_NAME = "Ocean On-Hand Notice Console"
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.7"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
@@ -7382,6 +7384,23 @@ def send_headless_smtp(to_emails, bcc_emails, subject, body, images, password):
         
     server.sendmail(SENDER_EMAIL, all_recipients, msg.as_string())
     server.quit()
+    _append_to_sent_folder(SMTP_LOGIN, password, msg)
+
+
+def _append_to_sent_folder(username, password, msg):
+    """Copy a sent MIME message to the mailbox Sent Items folder via IMAP."""
+    try:
+        imap = imaplib.IMAP4_SSL(IMAP_SERVER)
+        imap.login(username, password)
+        for folder in ("Sent Items", "Sent"):
+            status, _ = imap.select(f'"{folder}"')
+            if status == "OK":
+                imap.append(f'"{folder}"', r"\Seen", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+                break
+        imap.logout()
+    except Exception:
+        # Best-effort: don't fail the whole send if the Sent folder is unavailable.
+        pass
 
 # ==============================================================================
 # STANDALONE & QUEUE INTERACTIVE REVIEW ENGINE

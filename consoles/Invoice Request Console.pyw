@@ -13,6 +13,7 @@ import traceback
 import importlib
 import subprocess
 import smtplib
+import imaplib
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -105,6 +106,7 @@ MODERN_FONT = get_platform_font()
 # ==============================================================================
 SMTP_SERVER = "smtp.office365.com"
 SMTP_PORT = 587
+IMAP_SERVER = "outlook.office365.com"
 KEYRING_SERVICE_NAME = "MBE_Automation_CBY"
 SENDER_EMAIL = "cby@mbe.ky"
 
@@ -128,7 +130,7 @@ HELPFUL_LINKS_PRESETS = {
 # REMOTE SUPPORT: BUG REPORTING TO DISCORD
 # ==============================================================================
 APP_NAME = "Invoice Request Console"
-APP_VERSION = "2.0.6"
+APP_VERSION = "2.0.7"
 DEVELOPER_NAME = "Atlas Ramoon"
 BUG_REPORT_WEBHOOK_URL = (
     "https://discord.com/api/webhooks/1524620703259951104/"
@@ -586,6 +588,23 @@ def send_headless_smtp(to_emails, bcc_emails, subject, body, images, password):
         
     server.sendmail(SENDER_EMAIL, all_recipients, msg.as_string())
     server.quit()
+    _append_to_sent_folder(SENDER_EMAIL, password, msg)
+
+
+def _append_to_sent_folder(username, password, msg):
+    """Copy a sent MIME message to the mailbox Sent Items folder via IMAP."""
+    try:
+        imap = imaplib.IMAP4_SSL(IMAP_SERVER)
+        imap.login(username, password)
+        for folder in ("Sent Items", "Sent"):
+            status, _ = imap.select(f'"{folder}"')
+            if status == "OK":
+                imap.append(f'"{folder}"', r"\Seen", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+                break
+        imap.logout()
+    except Exception:
+        # Best-effort: don't fail the whole send if the Sent folder is unavailable.
+        pass
 
 # ==============================================================================
 # MANIFEST READER — parses a Manifest and Customs .xlsx file

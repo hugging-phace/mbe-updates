@@ -1,6 +1,6 @@
 {
-  "version": "1.0.6",
-  "changelog": "Magnet Client launcher now finds an existing portable client first and only tries to download if missing; falls back to tag v2.0.67.",
+  "version": "1.0.7",
+  "changelog": "SMTP sent emails are now copied to the mailbox Sent Items folder via IMAP so they appear in Sent Mail.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Ocean%20On-Hand%20Notice%20Console.pyw",
   "download_url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Ocean%20On-Hand%20Notice%20Console.pyw"
 }
