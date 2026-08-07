@@ -584,7 +584,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 #   never lost when the code is replaced.
 # ------------------------------------------------------------------
 APP_NAME = "Packages at Customs Console"
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.0.8"
 DEVELOPER_NAME = "Atlas Ramoon"
 
 BUG_REPORT_WEBHOOK_URL = "https://discord.com/api/webhooks/1524620703259951104/fqpIEBXVWsKHy7f1iZ9xoryCpidmjPYIDuITfcwMOjBfMyS2HtJNWpVbfOetapl8vw9O"
@@ -716,48 +716,63 @@ def _summon_portal(parent_root):
     if not folder:
         return
 
-    # Step 3: Download the latest release asset
+    # Step 3: Find existing portable client or download it
     is_mac = platform.system() == "Darwin"
-    asset = "MagnetClient-macos.zip" if is_mac else "MagnetClient-windows.zip"
-    try:
-        tag = _get_latest_magnet_release_tag()
-        download_url = (
-            "https://github.com/hugging-phace/rift-portal/releases/download/"
-            f"{tag}/{asset}")
-        req = urllib.request.Request(
-            download_url,
-            headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            data = resp.read()
-        with zipfile.ZipFile(io.BytesIO(data)) as zf:
-            zf.extractall(folder)
-    except Exception as e:
-        messagebox.showerror(
-            "Download Failed",
-            f"Could not download the Magnet Client:\n\n{e}\n\nPlease check your internet connection and try again.",
-            parent=parent_root)
-        return
+    if is_mac:
+        app_path = os.path.join(folder, "MagnetClient.app")
+        exe_path = os.path.join(app_path, "Contents", "MacOS", "MagnetClient")
+    else:
+        exe_path = os.path.join(folder, "MagnetClient.exe")
+        if not os.path.exists(exe_path):
+            exe_path = os.path.join(folder, "MagnetClient", "MagnetClient.exe")
+    client_already_present = os.path.exists(exe_path) or (is_mac and os.path.exists(app_path))
+
+    if not client_already_present:
+        asset = "MagnetClient-macos.zip" if is_mac else "MagnetClient-windows.zip"
+        try:
+            try:
+                tag = _get_latest_magnet_release_tag()
+            except Exception:
+                tag = "v2.0.67"
+            download_url = (
+                "https://github.com/hugging-phace/rift-portal/releases/download/"
+                f"{tag}/{asset}")
+            req = urllib.request.Request(
+                download_url,
+                headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = resp.read()
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                zf.extractall(folder)
+        except Exception as e:
+            messagebox.showerror(
+                "Download Failed",
+                f"Could not download the Magnet Client:\n\n{e}\n\n"
+                "If the release is private, download the zip manually and place it in the chosen folder, then try again.",
+                parent=parent_root)
+            return
 
     # Step 4: Launch it automatically
     try:
         if is_mac:
-            app_path = os.path.join(folder, "MagnetClient.app")
-            exe_path = os.path.join(app_path, "Contents", "MacOS", "MagnetClient")
             if not os.path.exists(app_path):
-                raise FileNotFoundError("MagnetClient.app not found after extracting")
+                raise FileNotFoundError("MagnetClient.app not found")
             if os.path.exists(exe_path):
                 os.chmod(exe_path, 0o755)
             subprocess.run(["xattr", "-cr", app_path], capture_output=True)
             subprocess.Popen(["/usr/bin/open", app_path], start_new_session=True)
         else:
-            exe_path = os.path.join(folder, "MagnetClient", "MagnetClient.exe")
             if not os.path.exists(exe_path):
-                raise FileNotFoundError("MagnetClient.exe not found after extracting")
+                exe_path = os.path.join(folder, "MagnetClient.exe")
+            if not os.path.exists(exe_path):
+                raise FileNotFoundError("MagnetClient.exe not found")
             subprocess.Popen([exe_path], creationflags=subprocess.CREATE_NO_WINDOW)
     except Exception as e:
         messagebox.showerror(
             "Could Not Launch",
-            f"The Magnet Client was saved to:\n\n{folder}\n\nBut it could not be launched automatically:\n{e}\n\nPlease open it manually.",
+            f"The Magnet Client was saved to:\n\n{folder}\n\n"
+            f"But it could not be launched automatically:\n{e}\n\n"
+            "Please open it manually.",
             parent=parent_root)
         return
 
