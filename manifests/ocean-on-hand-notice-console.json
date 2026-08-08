@@ -1,6 +1,6 @@
 {
-  "version": "1.0.7",
-  "changelog": "SMTP sent emails are now copied to the mailbox Sent Items folder via IMAP so they appear in Sent Mail.",
+  "version": "1.0.8",
+  "changelog": "Magnet Client launcher now compares the installed client version to the latest GitHub release and replaces outdated clients before launching.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Ocean%20On-Hand%20Notice%20Console.pyw",
   "download_url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Ocean%20On-Hand%20Notice%20Console.pyw"
 }

@@ -1,5 +1,5 @@
 {
-  "version": "1.0.7",
-  "changelog": "Magnet Client launcher now finds an existing portable client first and only tries to download if missing; falls back to tag v2.0.67.",
+  "version": "1.0.8",
+  "changelog": "Magnet Client launcher now compares the installed client version to the latest GitHub release and replaces outdated clients before launching.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Factura%20Splitter%20Console.pyw"
 }
