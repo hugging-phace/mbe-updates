@@ -130,7 +130,7 @@ A4_WIDTH = 595
 # REMOTE SUPPORT — bug reporting + self-update
 # ==============================================================================
 APP_NAME = "Factura Splitter Console"
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.0.9"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -454,9 +454,9 @@ def _rescale_to_a4_width(src_doc, page_idx):
     If the page is already A4 width, it's copied as-is."""
     page = src_doc[page_idx]
     if abs(page.rect.width - A4_WIDTH) < 1:
-        # Already A4 width — just copy it
+        # Already A4 width — just copy it with annotations
         out = fitz.open()
-        out.insert_pdf(src_doc, from_page=page_idx, to_page=page_idx)
+        out.insert_pdf(src_doc, from_page=page_idx, to_page=page_idx, annots=True)
         return out
     zoom = A4_WIDTH / page.rect.width
     new_width = A4_WIDTH
@@ -464,6 +464,9 @@ def _rescale_to_a4_width(src_doc, page_idx):
     scaled = fitz.open()
     new_page = scaled.new_page(width=new_width, height=new_height)
     new_page.show_pdf_page(new_page.rect, src_doc, page_idx)
+    # Copy annotations from the original page
+    for annot in page.annots():
+        new_page.add_annot(annot)
     return scaled
 
 

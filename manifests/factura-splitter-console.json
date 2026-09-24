@@ -1,5 +1,5 @@
 {
-  "version": "1.0.8",
-  "changelog": "Magnet Client launcher now compares the installed client version to the latest GitHub release and replaces outdated clients before launching.",
+  "version": "1.0.9",
+  "changelog": "Fixed issue where PDF annotations/notes added in Microsoft Edge were not preserved when splitting facturas. The tool now properly copies annotations from the original PDF pages to the split output files.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Factura%20Splitter%20Console.pyw"
 }
