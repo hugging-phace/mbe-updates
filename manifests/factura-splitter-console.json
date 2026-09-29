@@ -1,5 +1,5 @@
 {
-  "version": "1.0.11",
-  "changelog": "Fixed SSL certificate verification errors that prevented bug reporting on macOS and Windows. Added robust SSL context handling with fallback to ensure all HTTPS connections work reliably across different operating systems and Python configurations.",
+  "version": "1.0.12",
+  "changelog": "Added 'Check for Updates' button to the Report a Bug dialog for manual update checking. Users can now manually check for updates at any time without waiting for the automatic background check.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Factura%20Splitter%20Console.pyw"
 }

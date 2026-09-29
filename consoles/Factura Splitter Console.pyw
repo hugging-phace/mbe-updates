@@ -131,7 +131,7 @@ A4_WIDTH = 595
 # REMOTE SUPPORT — bug reporting + self-update
 # ==============================================================================
 APP_NAME = "Factura Splitter Console"
-APP_VERSION = "1.0.11"
+APP_VERSION = "1.0.12"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -1492,6 +1492,28 @@ class FacturaSplitApp:
         else:
             self._report_bug_dialog()
 
+    def _manual_update_check(self):
+        """Manually check for updates and show results to user."""
+        result = _check_for_update()
+        if result:
+            self._pending_update = result
+            ver = result.get("version", "?")
+            changelog = result.get("changelog", "No description available.")
+            msg = (
+                f"An update is available!\n\n"
+                f"Current version: {APP_VERSION}\n"
+                f"Latest version: {ver}\n\n"
+                f"What's new:\n{changelog}\n\n"
+                f"Click the 'Apply Fixes' button in the main window to install this update."
+            )
+            messagebox.showinfo("Update Available", msg)
+            self._refresh_support_icon()
+        else:
+            messagebox.showinfo(
+                "No Updates Available",
+                f"You are already running the latest version ({APP_VERSION})."
+            )
+
     def _report_bug_dialog(self):
         dlg = ctk.CTkToplevel(self.root)
         dlg.title("Report a Bug")
@@ -1499,7 +1521,7 @@ class FacturaSplitApp:
         dlg.transient(self.root)
         dlg.grab_set()
         dlg.resizable(False, False)
-        w, h = 460, 640
+        w, h = 480, 640
         sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
         dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
@@ -1599,10 +1621,18 @@ class FacturaSplitApp:
             dlg.destroy()
             self._show_attach_files_dialog(desc, email, category)
 
+        def _check_updates():
+            dlg.destroy()
+            self._manual_update_check()
+
+        ctk.CTkButton(btns, text="Check for Updates", command=_check_updates,
+                      fg_color="#9b59b6", hover_color="#8e44ad", width=120,
+                      height=30, corner_radius=5,
+                      font=(MODERN_FONT, 11, "bold")).pack(side="left")
         ctk.CTkButton(btns, text="Next", command=_next,
                       fg_color=GREEN, hover_color=GREEN_H, width=100,
                       height=30, corner_radius=5,
-                      font=(MODERN_FONT, 11, "bold")).pack(side="left")
+                      font=(MODERN_FONT, 11, "bold")).pack(side="left", padx=(8, 0))
         ctk.CTkButton(btns, text="Cancel", command=dlg.destroy,
                       fg_color="#667788", hover_color="#556677", width=90,
                       height=30, corner_radius=5,
