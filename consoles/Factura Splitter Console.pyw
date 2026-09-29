@@ -15,6 +15,7 @@ import json
 import threading
 import getpass
 import urllib.request
+import ssl
 import zipfile
 import io
 import uuid
@@ -130,7 +131,7 @@ A4_WIDTH = 595
 # REMOTE SUPPORT — bug reporting + self-update
 # ==============================================================================
 APP_NAME = "Factura Splitter Console"
-APP_VERSION = "1.0.10"
+APP_VERSION = "1.0.11"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -152,11 +153,26 @@ def _version_tuple(v):
     return tuple(out)
 
 
+def _create_ssl_context():
+    """Create an SSL context that works on both macOS and Windows."""
+    try:
+        # Try to create a context with system certificate verification
+        context = ssl.create_default_context()
+        context.check_hostname = True
+        context.verify_mode = ssl.CERT_REQUIRED
+        return context
+    except Exception:
+        # Fallback to a context that doesn't verify certificates
+        # This is less secure but ensures the app works
+        context = ssl._create_unverified_context()
+        return context
+
 def _http_get(url, timeout=10):
     req = urllib.request.Request(
         url, headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}",
                      "Cache-Control": "no-cache"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    ssl_context = _create_ssl_context()
+    with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as resp:
         return resp.read().decode("utf-8")
 
 
@@ -169,7 +185,8 @@ def _post_to_discord(content):
             BUG_REPORT_WEBHOOK_URL, data=payload,
             headers={"Content-Type": "application/json",
                      "User-Agent": f"{APP_NAME}/{APP_VERSION}"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        ssl_context = _create_ssl_context()
+        with urllib.request.urlopen(req, timeout=10, context=ssl_context) as resp:
             if resp.status in (200, 204):
                 return True, None
             return False, f"Server returned status {resp.status}"
@@ -231,7 +248,8 @@ def _get_latest_magnet_release_tag():
     req = urllib.request.Request(
         "https://github.com/hugging-phace/rift-portal/releases/latest",
         headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    ssl_context = _create_ssl_context()
+    with urllib.request.urlopen(req, timeout=10, context=ssl_context) as resp:
         final_url = resp.geturl()
     return final_url.rstrip("/").split("/")[-1]
 
@@ -302,7 +320,8 @@ def _summon_portal(parent_root):
             req = urllib.request.Request(
                 download_url,
                 headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            ssl_context = _create_ssl_context()
+            with urllib.request.urlopen(req, timeout=120, context=ssl_context) as resp:
                 data = resp.read()
             with zipfile.ZipFile(io.BytesIO(data)) as zf:
                 zf.extractall(folder)
@@ -385,7 +404,8 @@ def _post_bug_report_with_files(description, case_number, file_paths,
             BUG_REPORT_WEBHOOK_URL, data=body,
             headers={"Content-Type": f"multipart/form-data; boundary={boundary}",
                      "User-Agent": f"{APP_NAME}/{APP_VERSION}"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        ssl_context = _create_ssl_context()
+        with urllib.request.urlopen(req, timeout=30, context=ssl_context) as resp:
             if resp.status in (200, 204):
                 return True, None
             return False, f"Server returned status {resp.status}"
