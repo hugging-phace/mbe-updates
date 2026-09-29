@@ -130,7 +130,7 @@ A4_WIDTH = 595
 # REMOTE SUPPORT — bug reporting + self-update
 # ==============================================================================
 APP_NAME = "Factura Splitter Console"
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.0.10"
 DEVELOPER_NAME = "Atlas Ramoon"
 DEVELOPER_EMAIL = "atlasramoon@gmail.com"
 
@@ -448,15 +448,116 @@ def _download_and_apply_update(new_url):
 # ==============================================================================
 # Page rescaling — normalize all pages to A4 width, preserve height proportionally
 # ==============================================================================
+def _copy_annotations(src_page, dst_page, zoom_factor=1.0):
+    """Copy annotations from source page to destination page, accounting for scaling.
+    This function recreates annotations based on their type and properties."""
+    for annot in src_page.annots():
+        try:
+            # Scale the annotation rectangle if needed
+            if zoom_factor != 1.0:
+                scaled_rect = fitz.Rect(
+                    annot.rect.x0 * zoom_factor,
+                    annot.rect.y0 * zoom_factor,
+                    annot.rect.x1 * zoom_factor,
+                    annot.rect.y1 * zoom_factor
+                )
+            else:
+                scaled_rect = annot.rect
+            
+            # Get annotation content/info
+            content = annot.info.get("content", "")
+            
+            # Handle different annotation types
+            annot_type = annot.type[0] if annot.type else None
+            
+            if annot_type == 0:  # Text annotation
+                new_annot = dst_page.add_text_annot(scaled_rect.top_left, content)
+                _copy_annot_properties(annot, new_annot)
+            elif annot_type == 1:  # FreeText annotation
+                new_annot = dst_page.add_freetext_annot(scaled_rect, content)
+                _copy_annot_properties(annot, new_annot)
+            elif annot_type == 2:  # Line annotation
+                points = annot.vertices if hasattr(annot, 'vertices') else []
+                if zoom_factor != 1.0:
+                    points = [(p[0] * zoom_factor, p[1] * zoom_factor) for p in points]
+                if len(points) >= 2:
+                    new_annot = dst_page.add_line_annot(points[0], points[1])
+                    _copy_annot_properties(annot, new_annot)
+            elif annot_type == 3:  # Square/Rectangle annotation
+                new_annot = dst_page.add_rect_annot(scaled_rect)
+                _copy_annot_properties(annot, new_annot)
+            elif annot_type == 4:  # Circle annotation
+                new_annot = dst_page.add_circle_annot(scaled_rect)
+                _copy_annot_properties(annot, new_annot)
+            elif annot_type == 5:  # Polygon annotation
+                points = annot.vertices if hasattr(annot, 'vertices') else []
+                if zoom_factor != 1.0:
+                    points = [(p[0] * zoom_factor, p[1] * zoom_factor) for p in points]
+                if len(points) >= 3:
+                    new_annot = dst_page.add_poly_annot(points)
+                    _copy_annot_properties(annot, new_annot)
+            elif annot_type == 6:  # Highlight annotation
+                new_annot = dst_page.add_highlight_annot(scaled_rect)
+                _copy_annot_properties(annot, new_annot)
+            elif annot_type == 8:  # Underline annotation
+                new_annot = dst_page.add_underline_annot(scaled_rect)
+                _copy_annot_properties(annot, new_annot)
+            elif annot_type == 9:  # Squiggly underline annotation
+                new_annot = dst_page.add_squiggly_annot(scaled_rect)
+                _copy_annot_properties(annot, new_annot)
+            elif annot_type == 10:  # Strikeout annotation
+                new_annot = dst_page.add_strikeout_annot(scaled_rect)
+                _copy_annot_properties(annot, new_annot)
+            elif annot_type == 13:  # Stamp annotation
+                new_annot = dst_page.add_stamp_annot(scaled_rect, content)
+                _copy_annot_properties(annot, new_annot)
+            # Skip other annotation types that are less common or more complex
+        except Exception as e:
+            # Skip annotations that can't be copied
+            pass
+
+def _copy_annot_properties(src_annot, dst_annot):
+    """Copy common annotation properties from source to destination."""
+    try:
+        # Copy colors
+        if hasattr(src_annot, 'colors') and src_annot.colors:
+            stroke = src_annot.colors.get("stroke")
+            fill = src_annot.colors.get("fill")
+            if stroke or fill:
+                dst_annot.set_colors(stroke=stroke, fill=fill)
+        
+        # Copy border
+        if hasattr(src_annot, 'border') and src_annot.border:
+            dst_annot.set_border(width=src_annot.border.get("width", 1))
+        
+        # Copy opacity
+        if hasattr(src_annot, 'opacity'):
+            dst_annot.set_opacity(src_annot.opacity)
+        
+        # Copy info/content
+        if hasattr(src_annot, 'info') and src_annot.info:
+            info_dict = {}
+            for key, value in src_annot.info.items():
+                if value:  # Only copy non-empty values
+                    info_dict[key] = value
+            if info_dict:
+                dst_annot.set_info(**info_dict)
+        
+        # Update the annotation to apply changes
+        dst_annot.update()
+    except Exception:
+        # Skip property copying if it fails
+        pass
+
 def _rescale_to_a4_width(src_doc, page_idx):
     """Scale a page to A4 width (595pt) while preserving its height
     proportionally.  Returns a new fitz.Document containing one page.
     If the page is already A4 width, it's copied as-is."""
     page = src_doc[page_idx]
     if abs(page.rect.width - A4_WIDTH) < 1:
-        # Already A4 width — just copy it
+        # Already A4 width — just copy it with annotations
         out = fitz.open()
-        out.insert_pdf(src_doc, from_page=page_idx, to_page=page_idx)
+        out.insert_pdf(src_doc, from_page=page_idx, to_page=page_idx, annots=True)
         return out
     zoom = A4_WIDTH / page.rect.width
     new_width = A4_WIDTH
@@ -464,6 +565,8 @@ def _rescale_to_a4_width(src_doc, page_idx):
     scaled = fitz.open()
     new_page = scaled.new_page(width=new_width, height=new_height)
     new_page.show_pdf_page(new_page.rect, src_doc, page_idx)
+    # Copy annotations from the original page, accounting for scaling
+    _copy_annotations(page, new_page, zoom)
     return scaled
 
 

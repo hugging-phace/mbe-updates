@@ -1,5 +1,5 @@
 {
-  "version": "1.0.9",
-  "changelog": "Reverted annotation preservation fix that caused freezing. The tool now works normally again. We will investigate a different approach to preserve PDF annotations in a future update.",
+  "version": "1.0.10",
+  "changelog": "Implemented sophisticated annotation preservation system. The tool now properly copies PDF annotations/notes (text, highlights, shapes, etc.) from Microsoft Edge and other PDF editors when splitting facturas. Annotations are scaled correctly when pages are resized to A4 format.",
   "url": "https://raw.githubusercontent.com/hugging-phace/mbe-updates/main/consoles/Factura%20Splitter%20Console.pyw"
 }
